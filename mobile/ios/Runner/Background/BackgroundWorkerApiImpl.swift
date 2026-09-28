@@ -114,7 +114,6 @@ class BackgroundWorkerApiImpl: BackgroundWorkerFgHostApi {
     }
 
     task.expirationHandler = {
-      NativeCore.log(level: ImmichCoreLogLevel_Warning, logger: "BackgroundWorker", message: "Background task expired by the system")
       DispatchQueue.main.async {
         backgroundWorker.close()
       }

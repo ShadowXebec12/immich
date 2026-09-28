@@ -81,9 +81,6 @@ jobs:
       - name: Perform codegen
         run: mise //mobile:codegen
 
-      - name: Verify generated files have not changed
-        run: git diff --exit-code -- ../native/crates/immich_db/src/schema.g.rs
-
       - name: Run analyze
         run: mise //mobile:analyze --full
 

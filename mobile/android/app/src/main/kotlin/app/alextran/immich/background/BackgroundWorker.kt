@@ -15,7 +15,6 @@ import androidx.work.ListenableWorker
 import androidx.work.WorkerParameters
 import app.alextran.immich.MainActivity
 import app.alextran.immich.R
-import app.alextran.immich.core.NativeCore
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
@@ -77,7 +76,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
     }
 
     try {
-      NativeCore.log(ctx, NativeCore.Level.INFO, TAG, "Background worker started")
+      Log.i(TAG, "Starting background upload worker")
 
       if (!loader.initialized()) {
         loader.startInitialization(ctx)
@@ -194,7 +193,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
    * This is also called when the worker has been explicitly cancelled or replaced
    */
   override fun onStopped() {
-    NativeCore.log(ctx, NativeCore.Level.INFO, TAG, "Background worker stopped")
+    Log.d(TAG, "About to stop BackupWorker")
     close()
   }
 
@@ -226,15 +225,7 @@ class BackgroundWorker(context: Context, params: WorkerParameters) :
    * - Parameter success: Indicates whether the background task completed successfully
    */
   private fun complete(success: Result) {
-    if (isComplete) {
-      return
-    }
-
-    if (success is Result.Success) {
-      NativeCore.log(ctx, NativeCore.Level.INFO, TAG, "Background worker finished: success")
-    } else {
-      NativeCore.log(ctx, NativeCore.Level.WARNING, TAG, "Background worker finished: failure")
-    }
+    Log.d(TAG, "About to complete BackupWorker with result: $success")
     isComplete = true
     if (engine != null) {
       MainActivity.cancelPlugins(engine!!)
