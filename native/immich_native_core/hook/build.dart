@@ -72,7 +72,7 @@ Future<void> _rustup(List<String> args) async {
   }
 }
 
-// 16 KB pages, and link against minSdk instead of the API 35 that native_toolchain_rust picks.
+// Link against minSdk instead of the API 35 that native_toolchain_rust picks.
 String _androidRustFlags(CodeConfig code) {
   final triple = switch (code.targetArchitecture) {
     Architecture.arm => 'armv7a-linux-androideabi',
@@ -80,5 +80,5 @@ String _androidRustFlags(CodeConfig code) {
     Architecture.x64 => 'x86_64-linux-android',
     _ => throw UnsupportedError('Unsupported Android architecture: ${code.targetArchitecture}'),
   };
-  return '-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=--target=$triple${code.android.targetNdkApi}';
+  return '-C link-arg=--target=$triple${code.android.targetNdkApi}';
 }

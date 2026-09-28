@@ -85,7 +85,7 @@ jobs:
         run: git diff --exit-code -- ../native/crates/immich_db/src/schema.g.rs
 
       - name: Run analyze
-        run: mise //mobile:analyze
+        run: mise //mobile:analyze --full
 
       - name: Run format
         run: mise //mobile:format
