@@ -1,0 +1,78 @@
+name: Custom iOS build (unsigned IPA for Sideloadly)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [custom]
+    paths: ['mobile/**', 'open-api/**', '.github/workflows/custom-ios.yml']
+
+concurrency:
+  group: custom-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Select Xcode 26
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Generate Dart API client
+        working-directory: ./open-api
+        run: |
+          npm install -g @openapitools/openapi-generator-cli@2.40.1
+          bash ./bin/generate-dart-sdk.sh
+
+      - name: Install dependencies
+        working-directory: ./mobile
+        run: flutter pub get
+
+      - name: Codegen
+        working-directory: ./mobile
+        run: |
+          dart run easy_localization:generate -S ../i18n
+          dart run bin/generate_keys.dart
+          ls pigeon/*.dart | xargs -n1 -I{} dart run pigeon --input {}
+          dart run build_runner build
+          dart run drift_dev make-migrations
+
+      - name: Build iOS (no codesign)
+        working-directory: ./mobile
+        run: flutter build ios --release --no-codesign
+
+      - name: Package IPA
+        working-directory: ./mobile
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry ImmichCustom.ipa Payload
+          ls -la ImmichCustom.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ImmichCustom-ipa
+          path: mobile/ImmichCustom.ipa
+          retention-days: 30
