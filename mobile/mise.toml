@@ -33,6 +33,7 @@ alias = "codegen"
 description = "Generate all codegen artifacts"
 depends = [
   "//:open-api-dart",
+  "//native:codegen",
   "codegen:dart",
   "codegen:drift:migration",
   "codegen:drift:schema",
