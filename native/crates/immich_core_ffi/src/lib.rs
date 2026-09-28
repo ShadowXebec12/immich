@@ -8,10 +8,7 @@ mod android;
 #[cfg(target_os = "android")]
 mod bitmap;
 mod convert;
-mod log;
 mod rotate;
-
-pub use log::ImmichCoreLogLevel;
 
 /// Returns the core version as a C string. Free it with `immich_core_free_string`.
 #[unsafe(no_mangle)]
