@@ -67,7 +67,7 @@ jobs:
         working-directory: ./mobile
         run: |
           mkdir -p Payload
-          cp -R build/ios/iphoneos/Runner.app Payload/
+          cp -R build/ios/iphoneos/*.app Payload/
           zip -qry ImmichCustom.ipa Payload
           ls -la ImmichCustom.ipa
 
