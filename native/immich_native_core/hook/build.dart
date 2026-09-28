@@ -10,9 +10,7 @@ const _crate = '../crates/immich_core_ffi';
 const _manifests = [
   '../Cargo.toml',
   '../Cargo.lock',
-  '../.cargo/config.toml',
   '../crates/immich_core/Cargo.toml',
-  '../crates/immich_db/Cargo.toml',
   '$_crate/Cargo.toml',
   '$_crate/rust-toolchain.toml',
 ];
@@ -29,12 +27,7 @@ void main(List<String> args) async {
     await RustBuilder(
       assetName: 'src/bindings.g.dart',
       cratePath: _crate,
-      extraCargoEnvironmentVariables: {
-        if (code.targetOS == OS.android) 'RUSTFLAGS': _androidRustFlags(code),
-        // rustc links iOS for 10.0 by default, where libSystem hides the ___chkstk_darwin that clang's
-        // stack probes in the bundled sqlite call.
-        if (code.targetOS == OS.iOS) 'IPHONEOS_DEPLOYMENT_TARGET': '${code.iOS.targetVersion}.0',
-      },
+      extraCargoEnvironmentVariables: {if (code.targetOS == OS.android) 'RUSTFLAGS': _androidRustFlags(code)},
     ).run(input: input, output: output);
   });
 }
@@ -72,7 +65,7 @@ Future<void> _rustup(List<String> args) async {
   }
 }
 
-// 16 KB pages, and link against minSdk instead of the API 35 that native_toolchain_rust picks.
+// Link against minSdk instead of the API 35 that native_toolchain_rust picks.
 String _androidRustFlags(CodeConfig code) {
   final triple = switch (code.targetArchitecture) {
     Architecture.arm => 'armv7a-linux-androideabi',
@@ -80,5 +73,5 @@ String _androidRustFlags(CodeConfig code) {
     Architecture.x64 => 'x86_64-linux-android',
     _ => throw UnsupportedError('Unsupported Android architecture: ${code.targetArchitecture}'),
   };
-  return '-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=--target=$triple${code.android.targetNdkApi}';
+  return '-C link-arg=--target=$triple${code.android.targetNdkApi}';
 }
