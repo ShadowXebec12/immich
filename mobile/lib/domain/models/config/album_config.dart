@@ -10,5 +10,7 @@ abstract class AlbumConfig with _$AlbumConfig {
     @Default(AlbumSortMode.mostRecent) AlbumSortMode sortMode,
     @Default(true) bool isReverse,
     @Default(false) bool isGrid,
+    @Default({}) Map<String, String> folderMap,
+    @Default([]) List<String> folderNames,
   }) = _AlbumConfig;
 }

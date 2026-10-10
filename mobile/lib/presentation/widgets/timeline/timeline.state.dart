@@ -56,6 +56,10 @@ final timelineSegmentProvider = StreamProvider.autoDispose<List<Segment>>((ref) 
   );
   final availableTileWidth = maxWidth - (spacing * (columnCount - 1));
   final tileExtent = math.max(0, availableTileWidth) / columnCount;
+  // Custom fork: non-square tiles that show the whole image
+  final tileAspectPercent = ref.watch(appConfigProvider.select((config) => config.timeline.tileAspectPercent));
+  final uncropped = tileAspectPercent > 0;
+  final tileHeight = uncropped ? tileExtent * 100 / tileAspectPercent : tileExtent;
 
   final groupBy = groupByArg ?? ref.watch(appConfigProvider.select((config) => config.timeline.groupAssetsBy));
 
@@ -63,7 +67,9 @@ final timelineSegmentProvider = StreamProvider.autoDispose<List<Segment>>((ref) 
   yield* timelineService.watchBuckets().map((buckets) {
     return FixedSegmentBuilder(
       buckets: buckets,
-      tileHeight: tileExtent,
+      tileHeight: tileHeight,
+      tileWidth: tileExtent,
+      uncropped: uncropped,
       columnCount: columnCount,
       spacing: spacing,
       groupBy: groupBy!,

@@ -18,6 +18,7 @@ class LayoutSettings extends HookConsumerWidget {
     useValueChanged<int, void>(tilesPerRow.value, (_, _) {
       unawaited(ref.read(settingsProvider).write(.timelineTilesPerRow, tilesPerRow.value));
     });
+    final tileAspectPercent = ref.watch(appConfigProvider.select((s) => s.timeline.tileAspectPercent));
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -34,7 +35,30 @@ class LayoutSettings extends HookConsumerWidget {
             ref.invalidate(appSettingsServiceProvider);
           },
         ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+          title: const Text("Thumbnail shape"),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Wrap(
+              spacing: 8,
+              children: [
+                for (final (percent, label) in kTileShapes)
+                  ChoiceChip(
+                    key: ValueKey('tile_shape_$percent'),
+                    label: Text(label),
+                    selected: tileAspectPercent == percent,
+                    onSelected: (_) => unawaited(ref.read(settingsProvider).write(.timelineTileAspectPercent, percent)),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
 }
+
+// Custom fork. Tile width/height in percent. 0 keeps upstream square cropped tiles;
+// anything else shows the whole image in a tile of that shape.
+const kTileShapes = [(0, "Square (cropped)"), (100, "Square (full)"), (75, "3:4"), (67, "2:3"), (56, "9:16")];

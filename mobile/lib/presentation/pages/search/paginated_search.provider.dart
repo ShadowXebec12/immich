@@ -57,7 +57,8 @@ class PaginatedSearchNotifier extends StateNotifier<SearchState> {
       return;
     }
 
-    final assets = [...state.assets, ...result.assets];
+    final known = {for (final asset in state.assets) asset.heroTag};
+    final assets = [...state.assets, ...result.assets.where((asset) => known.add(asset.heroTag))];
     state = SearchState(assets: assets, nextPage: result.nextPage);
 
     _assetCountController.add(assets.length);

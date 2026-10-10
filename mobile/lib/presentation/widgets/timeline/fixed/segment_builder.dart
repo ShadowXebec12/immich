@@ -5,11 +5,15 @@ import 'package:immich_mobile/presentation/widgets/timeline/segment_builder.dart
 
 class FixedSegmentBuilder extends SegmentBuilder {
   final double tileHeight;
+  final double? tileWidth;
+  final bool uncropped;
   final int columnCount;
 
   const FixedSegmentBuilder({
     required super.buckets,
     required this.tileHeight,
+    this.tileWidth,
+    this.uncropped = false,
     required this.columnCount,
     super.spacing,
     super.groupBy,
@@ -54,6 +58,8 @@ class FixedSegmentBuilder extends SegmentBuilder {
           firstAssetIndex: assetIndex,
           bucket: bucket,
           tileHeight: tileHeight,
+          tileWidth: tileWidth ?? tileHeight,
+          uncropped: uncropped,
           columnCount: columnCount,
           headerExtent: headerExtent,
           spacing: spacing,

@@ -3,7 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/search/search_filter.model.dart';
 
-enum DisplayOption { notInAlbum, favorite, archive }
+enum DisplayOption { notInAlbum, favorite, notFavorite, archive }
 
 class DisplayOptionPicker extends HookWidget {
   const DisplayOptionPicker({super.key, required this.onSelect, this.filter});
@@ -16,6 +16,7 @@ class DisplayOptionPicker extends HookWidget {
     final options = useState<Map<DisplayOption, bool>>({
       DisplayOption.notInAlbum: filter?.isNotInAlbum ?? false,
       DisplayOption.favorite: filter?.isFavorite ?? false,
+      DisplayOption.notFavorite: filter?.isNotFavorite ?? false,
       DisplayOption.archive: filter?.isArchive ?? false,
     });
 
@@ -34,7 +35,24 @@ class DisplayOptionPicker extends HookWidget {
           title: Text(context.t.favorite),
           value: options.value[DisplayOption.favorite],
           onChanged: (value) {
-            options.value = {...options.value, DisplayOption.favorite: value!};
+            options.value = {
+              ...options.value,
+              DisplayOption.favorite: value!,
+              if (value) DisplayOption.notFavorite: false,
+            };
+            onSelect(options.value);
+          },
+        ),
+        CheckboxListTile(
+          key: const Key('display_option_not_favorite'),
+          title: const Text("Not favorite"),
+          value: options.value[DisplayOption.notFavorite],
+          onChanged: (value) {
+            options.value = {
+              ...options.value,
+              DisplayOption.notFavorite: value!,
+              if (value) DisplayOption.favorite: false,
+            };
             onSelect(options.value);
           },
         ),

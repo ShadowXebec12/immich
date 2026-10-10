@@ -6,12 +6,15 @@ import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/timeline.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
+import 'package:immich_mobile/presentation/widgets/album/album_search_bar.widget.dart';
 import 'package:immich_mobile/presentation/widgets/album/pending_uploads_banner.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/remote_album_bottom_sheet.widget.dart';
 import 'package:immich_mobile/presentation/widgets/remote_album/album_option.widget.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/timeline.widget.dart';
+import 'package:immich_mobile/providers/album/album_search.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/current_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
@@ -187,35 +190,68 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
   Widget build(BuildContext context) {
     final user = ref.watch(currentUserProvider);
     final isOwner = user != null ? user.id == _album.ownerId : false;
+    // Custom fork: in-album search. null = search bar closed
+    final isSearching = ref.watch(albumSearchQueryProvider(_album.id).select((query) => query != null));
 
     return ProviderScope(
       overrides: [
         timelineServiceProvider.overrideWith((ref) {
-          final timelineService = ref.watch(timelineFactoryProvider).remoteAlbum(albumId: _album.id);
+          final query = ref.watch(albumSearchQueryProvider(_album.id))?.trim() ?? '';
+          final factory = ref.watch(timelineFactoryProvider);
+          final timelineService = query.isEmpty
+              ? factory.remoteAlbum(albumId: _album.id)
+              : factory.remoteAlbumSearch(albumId: _album.id, query: query);
           ref.onDispose(timelineService.dispose);
           return timelineService;
         }),
         currentRemoteAlbumScopedProvider.overrideWithValue(_album),
       ],
-      child: Timeline(
-        topSliverWidget: PendingUploadsBanner(albumId: _album.id),
-        appBar: RemoteAlbumSliverAppBar(
-          icon: Icons.photo_album_outlined,
-          kebabMenu: _AlbumKebabMenu(
-            album: _album,
-            onDeleteAlbum: () => deleteAlbum(context),
-            onAddUsers: () => addUsers(context),
-            onAddPhotos: () => addAssets(context),
-            onToggleAlbumOrder: () => toggleAlbumOrder(),
-            onEditAlbum: () => showEditTitleAndDescription(context),
-            onCreateSharedLink: () => unawaited(context.pushRoute(SharedLinkEditRoute(albumId: _album.id))),
-            onShowOptions: () => context.pushRoute(AlbumOptionsRoute(album: _album)),
-          ),
-          onEditTitle: isOwner ? () => showEditTitleAndDescription(context) : null,
-          onActivity: () => showActivity(context),
+      child: Material(
+        color: context.colorScheme.surface,
+        child: Column(
+          children: [
+            if (isSearching) AlbumSearchBar(albumId: _album.id),
+            Expanded(
+              key: const ValueKey('album_timeline'),
+              child: MediaQuery.removePadding(
+                context: context,
+                removeTop: isSearching,
+                child: _buildTimeline(context, isOwner: isOwner, isSearching: isSearching),
+              ),
+            ),
+          ],
         ),
-        bottomSheet: RemoteAlbumBottomSheet(album: _album),
       ),
+    );
+  }
+
+  Widget _buildTimeline(BuildContext context, {required bool isOwner, required bool isSearching}) {
+    // Search results are one flat, undated list (same setup as the search page)
+    final hasQuery = ref.watch(albumSearchQueryProvider(_album.id).select((query) => (query ?? '').trim().isNotEmpty));
+
+    return Timeline(
+      groupBy: hasQuery ? GroupAssetsBy.none : null,
+      snapToMonth: !hasQuery,
+      withScrubber: !hasQuery,
+      topSliverWidget: PendingUploadsBanner(albumId: _album.id),
+      appBar: isSearching
+          ? null
+          : RemoteAlbumSliverAppBar(
+              icon: Icons.photo_album_outlined,
+              kebabMenu: _AlbumKebabMenu(
+                album: _album,
+                onDeleteAlbum: () => deleteAlbum(context),
+                onAddUsers: () => addUsers(context),
+                onAddPhotos: () => addAssets(context),
+                onToggleAlbumOrder: () => toggleAlbumOrder(),
+                onEditAlbum: () => showEditTitleAndDescription(context),
+                onCreateSharedLink: () => unawaited(context.pushRoute(SharedLinkEditRoute(albumId: _album.id))),
+                onShowOptions: () => context.pushRoute(AlbumOptionsRoute(album: _album)),
+              ),
+              onEditTitle: isOwner ? () => showEditTitleAndDescription(context) : null,
+              onActivity: () => showActivity(context),
+            ),
+      bottomSheet: RemoteAlbumBottomSheet(album: _album),
     );
   }
 }

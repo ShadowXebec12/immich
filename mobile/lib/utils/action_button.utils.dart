@@ -24,6 +24,7 @@ import 'package:immich_mobile/presentation/actions/share_link.action.dart';
 import 'package:immich_mobile/presentation/actions/similar_photos.action.dart';
 import 'package:immich_mobile/presentation/actions/slideshow.action.dart';
 import 'package:immich_mobile/presentation/actions/stack.action.dart';
+import 'package:immich_mobile/presentation/actions/stack_slideshow.action.dart';
 import 'package:immich_mobile/presentation/actions/upload.action.dart';
 import 'package:immich_mobile/presentation/widgets/action_buttons/base_action_button.widget.dart';
 import 'package:immich_mobile/presentation/widgets/action_buttons/like_activity_action_button.widget.dart';
@@ -70,6 +71,7 @@ enum ActionButtonType {
   setProfilePicture,
   viewInTimeline,
   slideshow,
+  stackSlideshow,
   download,
   upload,
   openInBrowser,
@@ -162,6 +164,9 @@ enum ActionButtonType {
             context.isOwner,
       ActionButtonType.cast => context.isCasting || context.asset.hasRemote,
       ActionButtonType.slideshow => true,
+      ActionButtonType.stackSlideshow =>
+        !context.isInLockedView && //
+            context.isStacked,
     };
   }
 
@@ -176,6 +181,7 @@ enum ActionButtonType {
       ActionButtonType.share => ActionMenuItem(action: ShareAction(source: context.source)),
       ActionButtonType.shareLink => ActionMenuItem(action: ShareLinkAction(source: context.source)),
       ActionButtonType.slideshow => const ActionMenuItem(action: SlideshowAction()),
+      ActionButtonType.stackSlideshow => const ActionMenuItem(action: StackSlideshowAction()),
       ActionButtonType.archive ||
       ActionButtonType.unarchive => ActionMenuItem(action: ArchiveAction(source: context.source)),
       ActionButtonType.download => ActionMenuItem(action: DownloadAction(source: context.source)),

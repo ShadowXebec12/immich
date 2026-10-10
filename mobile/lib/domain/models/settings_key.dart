@@ -35,6 +35,9 @@ enum SettingsKey<T> {
   albumSortMode<AlbumSortMode>(codec: EnumCodec(AlbumSortMode.values)),
   albumIsReverse<bool>(),
   albumIsGrid<bool>(),
+  // Custom fork: local album folders. albumId -> folder name, plus the folder list (keeps empty folders).
+  albumFolderMap<Map<String, String>>(codec: MapCodec(PrimitiveCodec.string, PrimitiveCodec.string)),
+  albumFolderNames<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Backup
   backupEnabled<bool>(),
@@ -48,6 +51,8 @@ enum SettingsKey<T> {
   timelineTilesPerRow<int>(),
   timelineGroupAssetsBy<GroupAssetsBy>(codec: EnumCodec(GroupAssetsBy.values)),
   timelineStorageIndicator<bool>(),
+  // Custom fork: tile width/height in percent. 0 = upstream square cropped tiles.
+  timelineTileAspectPercent<int>(),
 
   // Log
   logLevel<LogLevel>(codec: EnumCodec(LogLevel.values)),

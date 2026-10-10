@@ -10,6 +10,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/theme_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/albums/album_search.model.dart';
+import 'package:immich_mobile/presentation/widgets/album/album_folder_bar.widget.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_tile.dart';
 import 'package:immich_mobile/presentation/widgets/album/new_album_name_modal.widget.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
@@ -46,6 +47,8 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   final searchFocusNode = FocusNode();
   List<RemoteAlbum> sortedAlbums = [];
   List<RemoteAlbum> shownAlbums = [];
+  // Custom fork: null = all albums, '' = albums in no folder, otherwise a folder name
+  FolderFilter folderFilter;
 
   AlbumFilter filter = const AlbumFilter(query: "", mode: QuickFilterMode.all);
   AlbumSort sort = const AlbumSort(mode: AlbumSortMode.lastModified, isReverse: true);
@@ -178,6 +181,18 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   Widget build(BuildContext context) {
     final userId = ref.watch(currentUserProvider.select((user) => user?.id));
 
+    // Custom fork: folder filter on top of the search/quick filters
+    final folders = ref.watch(albumFoldersProvider);
+    final activeFolder = folderFilter == null || folderFilter == kUnfiledFolder || folders.names.contains(folderFilter)
+        ? folderFilter
+        : null;
+    final folderAlbums = activeFolder == null
+        ? shownAlbums
+        : shownAlbums
+              .where((a) => folders.folderOf(a.id) == (activeFolder == kUnfiledFolder ? null : activeFolder))
+              .toList();
+    void onAlbumLongPress(RemoteAlbum album) => unawaited(showMoveAlbumToFolderSheet(context, ref, album));
+
     // refilter and sort when albums change
     ref.listen(remoteAlbumProvider.select((state) => state.albums), (_, _) async {
       await sortAlbums();
@@ -210,9 +225,24 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
             currentSortMode: sort.mode,
             currentIsReverse: sort.isReverse,
           ),
+          AlbumFolderBar(
+            albums: shownAlbums,
+            selected: activeFolder,
+            onSelected: (value) => setState(() => folderFilter = value),
+          ),
           isGrid
-              ? _AlbumGrid(albums: shownAlbums, userId: userId, onAlbumSelected: widget.onAlbumSelected)
-              : _AlbumList(albums: shownAlbums, userId: userId, onAlbumSelected: widget.onAlbumSelected),
+              ? _AlbumGrid(
+                  albums: folderAlbums,
+                  userId: userId,
+                  onAlbumSelected: widget.onAlbumSelected,
+                  onAlbumLongPress: onAlbumLongPress,
+                )
+              : _AlbumList(
+                  albums: folderAlbums,
+                  userId: userId,
+                  onAlbumSelected: widget.onAlbumSelected,
+                  onAlbumLongPress: onAlbumLongPress,
+                ),
         ],
       ),
     );
@@ -559,11 +589,12 @@ class _QuickSortAndViewMode extends StatelessWidget {
 }
 
 class _AlbumList extends ConsumerWidget {
-  const _AlbumList({required this.albums, required this.userId, required this.onAlbumSelected});
+  const _AlbumList({required this.albums, required this.userId, required this.onAlbumSelected, this.onAlbumLongPress});
 
   final List<RemoteAlbum> albums;
   final String? userId;
   final AlbumSelectorCallback onAlbumSelected;
+  final AlbumSelectorCallback? onAlbumLongPress;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -608,13 +639,19 @@ class _AlbumList extends ConsumerWidget {
                 onDismissed: (direction) async {
                   await ref.read(remoteAlbumProvider.notifier).deleteAlbum(album.id);
                 },
-                child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
+                child: GestureDetector(
+                  onLongPress: onAlbumLongPress == null ? null : () => onAlbumLongPress!(album),
+                  child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
+                ),
               ),
             );
           } else {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
-              child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
+              child: GestureDetector(
+                onLongPress: onAlbumLongPress == null ? null : () => onAlbumLongPress!(album),
+                child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
+              ),
             );
           }
         },
@@ -625,11 +662,12 @@ class _AlbumList extends ConsumerWidget {
 }
 
 class _AlbumGrid extends StatelessWidget {
-  const _AlbumGrid({required this.albums, required this.userId, required this.onAlbumSelected});
+  const _AlbumGrid({required this.albums, required this.userId, required this.onAlbumSelected, this.onAlbumLongPress});
 
   final List<RemoteAlbum> albums;
   final String? userId;
   final AlbumSelectorCallback onAlbumSelected;
+  final AlbumSelectorCallback? onAlbumLongPress;
 
   @override
   Widget build(BuildContext context) {
@@ -652,7 +690,10 @@ class _AlbumGrid extends StatelessWidget {
         ),
         delegate: SliverChildBuilderDelegate((context, index) {
           final album = albums[index];
-          return _GridAlbumCard(album: album, userId: userId, onAlbumSelected: onAlbumSelected);
+          return GestureDetector(
+            onLongPress: onAlbumLongPress == null ? null : () => onAlbumLongPress!(album),
+            child: _GridAlbumCard(album: album, userId: userId, onAlbumSelected: onAlbumSelected),
+          );
         }, childCount: albums.length),
       ),
     );

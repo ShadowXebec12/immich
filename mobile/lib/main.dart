@@ -181,7 +181,8 @@ class ImmichAppState extends ConsumerState<ImmichApp> with WidgetsBindingObserve
     final isColdStart = currentRouteName == null || currentRouteName == SplashScreenRoute.name;
 
     PageRouteInfo? route;
-    if (deepLink.uri.scheme == "immich") {
+    // Custom fork: own scheme so links do not open the App Store Immich
+    if (deepLink.uri.scheme == "immich" || deepLink.uri.scheme == "immichcustom") {
       route = await deepLinkHandler.handleScheme(deepLink, ref);
     } else if (deepLink.uri.host == "my.immich.app") {
       route = await deepLinkHandler.handleMyImmichApp(deepLink, ref);

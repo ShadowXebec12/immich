@@ -9,6 +9,17 @@ class SearchApiRepository extends ApiRepository {
 
   const SearchApiRepository(this._api);
 
+  // Custom fork: favorites / non-favorites / either
+  static Optional<bool?> _favorite(SearchFilter filter) => filter.display.isFavorite
+      ? const Optional.present(true)
+      : filter.display.isNotFavorite
+      ? const Optional.present(false)
+      : const Optional.absent();
+
+  // Custom fork: the server returns assets that are in ALL of these albums
+  static Optional<List<String>?> _albums(SearchFilter filter) =>
+      filter.albumIds.isEmpty ? const Optional.absent() : Optional.present(filter.albumIds);
+
   Future<SearchResponseDto?> search(SearchFilter filter, int page) {
     AssetTypeEnum? type;
     if (filter.mediaType.index == AssetType.image.index) {
@@ -39,7 +50,8 @@ class SearchApiRepository extends ApiRepository {
               : Optional.present(filter.date.takenBefore),
           visibility: Optional.present(filter.display.isArchive ? AssetVisibility.archive : AssetVisibility.timeline),
           rating: filter.rating.rating.toOptional(),
-          isFavorite: filter.display.isFavorite ? const Optional.present(true) : const Optional.absent(),
+          isFavorite: _favorite(filter),
+          albumIds: _albums(filter),
           isNotInAlbum: filter.display.isNotInAlbum ? const Optional.present(true) : const Optional.absent(),
           personIds: Optional.present(filter.people.map((e) => e.id).toList()),
           tagIds: filter.tagIds == null ? const Optional.absent() : Optional.present(filter.tagIds),
@@ -70,7 +82,8 @@ class SearchApiRepository extends ApiRepository {
             : Optional.present(filter.date.takenBefore),
         visibility: Optional.present(filter.display.isArchive ? AssetVisibility.archive : AssetVisibility.timeline),
         rating: filter.rating.rating.toOptional(),
-        isFavorite: filter.display.isFavorite ? const Optional.present(true) : const Optional.absent(),
+        isFavorite: _favorite(filter),
+        albumIds: _albums(filter),
         isNotInAlbum: filter.display.isNotInAlbum ? const Optional.present(true) : const Optional.absent(),
         personIds: Optional.present(filter.people.map((e) => e.id).toList()),
         tagIds: filter.tagIds == null ? const Optional.absent() : Optional.present(filter.tagIds),

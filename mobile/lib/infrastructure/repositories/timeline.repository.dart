@@ -13,6 +13,7 @@ import 'package:immich_mobile/domain/models/timeline.model.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/infrastructure/repositories/map.repository.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.drift.dart';
+import 'package:immich_mobile/utils/wildcard_match.dart';
 import 'package:stream_transform/stream_transform.dart';
 
 @DriftAccessor()
@@ -162,6 +163,72 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     return query
         .map((row) => row.readTable(_db.localAssetEntity).toDto(remoteId: row.read(_db.remoteAssetEntity.id)))
         .get();
+  }
+
+  // Custom fork: assets of an album whose file name or description matches every search term
+  TimelineQuery remoteAlbumSearch(String albumId, String query) => (
+    bucketSource: () => _watchRemoteAlbumSearchBucket(albumId, query),
+    assetSource: (offset, count) => _getRemoteAlbumSearchAssets(albumId, query, offset: offset, count: count),
+    origin: TimelineOrigin.remoteAlbum,
+  );
+
+  List<Join> _albumSearchJoins() => [
+    innerJoin(
+      _db.remoteAlbumAssetEntity,
+      _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
+      useColumns: false,
+    ),
+    leftOuterJoin(
+      _db.remoteExifEntity,
+      _db.remoteExifEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
+      useColumns: false,
+    ),
+  ];
+
+  Expression<bool> _albumSearchFilter(String albumId, String query) {
+    Expression<bool> filter =
+        _db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId);
+    for (final pattern in likePatterns(query)) {
+      filter =
+          filter &
+          (_db.remoteAssetEntity.name.like(pattern, escapeChar: r'\') |
+              _db.remoteExifEntity.description.like(pattern, escapeChar: r'\'));
+    }
+    return filter;
+  }
+
+  Stream<List<Bucket>> _watchRemoteAlbumSearchBucket(String albumId, String query) {
+    final assetCountExp = _db.remoteAssetEntity.id.count();
+    final countQuery = _db.remoteAssetEntity.selectOnly()
+      ..addColumns([assetCountExp])
+      ..join(_albumSearchJoins())
+      ..where(_albumSearchFilter(albumId, query));
+
+    return countQuery
+        .map((row) => _generateBuckets(row.read(assetCountExp) ?? 0))
+        .watchSingle()
+        .handleError((error) => const <Bucket>[]);
+  }
+
+  Future<List<BaseAsset>> _getRemoteAlbumSearchAssets(
+    String albumId,
+    String query, {
+    required int offset,
+    required int count,
+  }) {
+    final localId = subqueryExpression<String>(
+      _db.localAssetEntity.selectOnly()
+        ..addColumns([_db.localAssetEntity.id])
+        ..where(_db.localAssetEntity.checksum.equalsExp(_db.remoteAssetEntity.checksum))
+        ..limit(1),
+    );
+
+    final assetQuery = _db.remoteAssetEntity.select().addColumns([localId]).join(_albumSearchJoins())
+      ..where(_albumSearchFilter(albumId, query))
+      ..orderBy([OrderingTerm.desc(_db.remoteAssetEntity.createdAt)])
+      ..limit(count, offset: offset);
+
+    return assetQuery.map((row) => row.readTable(_db.remoteAssetEntity).toDto(localId: row.read(localId))).get();
   }
 
   TimelineQuery remoteAlbum(String albumId, GroupAssetsBy groupBy) => (

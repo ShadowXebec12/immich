@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
+import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/person.model.dart';
 import 'package:immich_mobile/domain/models/tag.model.dart';
@@ -26,6 +27,7 @@ import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/common/feature_check.dart';
 import 'package:immich_mobile/widgets/common/search_field.dart';
 import 'package:immich_mobile/widgets/common/tag_picker.dart';
+import 'package:immich_mobile/widgets/search/search_filter/album_filter_picker.dart';
 import 'package:immich_mobile/widgets/search/search_filter/camera_picker.dart';
 import 'package:immich_mobile/widgets/search/search_filter/display_option_picker.dart';
 import 'package:immich_mobile/widgets/search/search_filter/filter_bottom_sheet_scaffold.dart';
@@ -66,6 +68,7 @@ class SearchPage extends HookConsumerWidget {
 
     final dateInputFilter = useState<DateFilterInputModel?>(null);
 
+    final albumCurrentFilterWidget = useState<Widget?>(null);
     final peopleCurrentFilterWidget = useState<Widget?>(null);
     final dateRangeCurrentFilterWidget = useState<Widget?>(null);
     final cameraCurrentFilterWidget = useState<Widget?>(null);
@@ -109,6 +112,7 @@ class SearchPage extends HookConsumerWidget {
           }
 
           textSearchController.clear();
+          albumCurrentFilterWidget.value = null;
           peopleCurrentFilterWidget.value = null;
           dateRangeCurrentFilterWidget.value = null;
           cameraCurrentFilterWidget.value = null;
@@ -125,6 +129,50 @@ class SearchPage extends HookConsumerWidget {
 
       return null;
     }, [preFilter]);
+
+    // Custom fork: search inside one or more albums
+    void showAlbumPicker() {
+      var albumIds = filter.value.albumIds;
+      var matchAny = filter.value.albumMatchAny;
+      var label = '';
+
+      void handleOnSelect(List<RemoteAlbum> albums, bool any) {
+        albumIds = albums.map((a) => a.id).toList();
+        matchAny = any;
+        label = albums.map((a) => a.name).join(any ? ' | ' : ' + ');
+      }
+
+      void handleClear() {
+        albumCurrentFilterWidget.value = null;
+        search(filter.value.copyWith(albumIds: [], albumMatchAny: false));
+      }
+
+      void handleApply() {
+        albumCurrentFilterWidget.value = label.isNotEmpty ? Text(label, style: context.textTheme.labelLarge) : null;
+        search(filter.value.copyWith(albumIds: albumIds, albumMatchAny: matchAny));
+      }
+
+      unawaited(
+        showFilterBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          child: FractionallySizedBox(
+            heightFactor: 0.8,
+            child: FilterBottomSheetScaffold(
+              title: "Albums",
+              expanded: true,
+              onSearch: handleApply,
+              onClear: handleClear,
+              child: AlbumFilterPicker(
+                onSelect: handleOnSelect,
+                initialSelection: filter.value.albumIds.toSet(),
+                initialMatchAny: filter.value.albumMatchAny,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
 
     void showPeoplePicker() {
       var people = filter.value.people;
@@ -455,6 +503,7 @@ class SearchPage extends HookConsumerWidget {
           isNotInAlbum: value[DisplayOption.notInAlbum] ?? display.isNotInAlbum,
           isArchive: value[DisplayOption.archive] ?? display.isArchive,
           isFavorite: value[DisplayOption.favorite] ?? display.isFavorite,
+          isNotFavorite: value[DisplayOption.notFavorite] ?? display.isNotFavorite,
         );
       }
 
@@ -472,6 +521,7 @@ class SearchPage extends HookConsumerWidget {
           if (display.isNotInAlbum) context.t.search_filter_display_option_not_in_album,
           if (display.isArchive) context.t.archive,
           if (display.isFavorite) context.t.favorite,
+          if (display.isNotFavorite) "Not favorite",
         ];
         displayOptionCurrentFilterWidget.value = filterText.isNotEmpty
             ? Text(filterText.join(', '), style: context.textTheme.labelLarge)
@@ -657,6 +707,13 @@ class SearchPage extends HookConsumerWidget {
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   children: [
+                    SearchFilterChip(
+                      key: const Key('album_filter_chip'),
+                      icon: Icons.photo_album_outlined,
+                      onTap: showAlbumPicker,
+                      label: "Albums",
+                      currentFilter: albumCurrentFilterWidget.value,
+                    ),
                     SearchFilterChip(
                       icon: Icons.people_alt_outlined,
                       onTap: showPeoplePicker,

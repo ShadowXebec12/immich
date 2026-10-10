@@ -110,8 +110,13 @@ abstract class SearchRatingFilter with _$SearchRatingFilter {
 
 @freezed
 abstract class SearchDisplayFilters with _$SearchDisplayFilters {
-  const factory SearchDisplayFilters({required bool isNotInAlbum, required bool isArchive, required bool isFavorite}) =
-      _SearchDisplayFilters;
+  const factory SearchDisplayFilters({
+    required bool isNotInAlbum,
+    required bool isArchive,
+    required bool isFavorite,
+    // Custom fork: only assets that are NOT favorites
+    @Default(false) bool isNotFavorite,
+  }) = _SearchDisplayFilters;
 }
 
 @freezed
@@ -126,6 +131,9 @@ abstract class SearchFilter with _$SearchFilter {
     String? language,
     String? assetId,
     List<String>? tagIds,
+    // Custom fork: limit the search to albums. albumMatchAny = in any of them, otherwise in all of them
+    @Default([]) List<String> albumIds,
+    @Default(false) bool albumMatchAny,
     required Set<Person> people,
     required SearchLocationFilter location,
     required SearchCameraFilter camera,
@@ -142,6 +150,8 @@ abstract class SearchFilter with _$SearchFilter {
         (assetId == null || (assetId!.isEmpty)) &&
         (ocr == null || (ocr!.isEmpty)) &&
         (tagIds ?? []).isEmpty &&
+        albumIds.isEmpty &&
+        display.isNotFavorite == false &&
         people.isEmpty &&
         location.country == null &&
         location.state == null &&

@@ -18,7 +18,10 @@ import 'package:immich_mobile/presentation/widgets/asset_viewer/video_viewer.wid
 import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/asset_viewer/video_player_provider.dart';
+import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
+import 'package:immich_mobile/repositories/asset_media.repository.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/utils/system_ui.utils.dart';
 import 'package:immich_mobile/widgets/common/immich_loading_indicator.dart';
@@ -46,6 +49,12 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
   late int _nextIndex;
   bool _paused = false;
   bool _showAppBar = false;
+
+  // Custom fork: favorite / share buttons shown while the slideshow is paused.
+  // The timeline's copy of an asset is not refreshed mid-slideshow, so remember what was tapped.
+  final Map<String, bool> _favoriteOverrides = {};
+  bool _favoriteBusy = false;
+  bool _sharing = false;
 
   late final AnimationController _crossfadeController;
   late final Animation<double> _crossfadeOpacity;
@@ -120,6 +129,123 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
     setState(() {
       _paused = true;
     });
+  }
+
+  bool _isFavorite(BaseAsset asset) => _favoriteOverrides[asset.remoteId] ?? asset.isFavorite;
+
+  Future<void> _toggleFavorite() async {
+    final asset = widget.timeline.getAssetSafe(_index);
+    final remoteId = asset?.remoteId;
+    if (asset == null || remoteId == null || _favoriteBusy) {
+      return;
+    }
+
+    final target = !_isFavorite(asset);
+    setState(() {
+      _favoriteBusy = true;
+      _favoriteOverrides[remoteId] = target;
+    });
+
+    try {
+      await ref.read(assetServiceProvider).update([remoteId], isFavorite: .some(target));
+    } catch (_) {
+      if (mounted) {
+        setState(() => _favoriteOverrides[remoteId] = !target);
+        ref.read(toastServiceProvider).error(context.t.scaffold_body_error_occurred);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _favoriteBusy = false);
+      }
+    }
+  }
+
+  Future<void> _shareCurrent() async {
+    final asset = widget.timeline.getAssetSafe(_index);
+    if (asset == null || _sharing) {
+      return;
+    }
+
+    // Hold the slide while the share sheet is open, then carry on if it was playing
+    final wasPlaying = !_paused;
+    if (wasPlaying) {
+      _pause();
+    }
+    setState(() => _sharing = true);
+
+    final cancelCompleter = Completer<void>();
+    try {
+      final count = await ref
+          .read(assetMediaRepositoryProvider)
+          .shareAssets(
+            [asset],
+            context,
+            fileType: ref.read(appConfigProvider).share.fileType,
+            cancelCompleter: cancelCompleter,
+          );
+      if (count == 0 && mounted) {
+        ref.read(toastServiceProvider).error(context.t.scaffold_body_error_occurred);
+      }
+    } catch (_) {
+      if (mounted) {
+        ref.read(toastServiceProvider).error(context.t.scaffold_body_error_occurred);
+      }
+    } finally {
+      if (!cancelCompleter.isCompleted) {
+        cancelCompleter.complete();
+      }
+      if (mounted) {
+        setState(() => _sharing = false);
+        if (wasPlaying && _paused) {
+          _play();
+        }
+      }
+    }
+  }
+
+  Widget _getActionButtons(BuildContext context) {
+    final asset = widget.timeline.getAssetSafe(_index);
+    // Only while paused (sharing pauses too), so nothing covers the picture during playback
+    if (asset == null || !_paused) {
+      return const SizedBox.shrink();
+    }
+
+    Widget button({required Key key, required IconData icon, required VoidCallback? onPressed, Color? color}) =>
+        Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: IconButton.filled(
+            key: key,
+            style: IconButton.styleFrom(backgroundColor: Colors.black.withValues(alpha: 0.35)),
+            iconSize: 26,
+            onPressed: onPressed,
+            icon: Icon(icon, color: color ?? Colors.white.withValues(alpha: 0.9)),
+          ),
+        );
+
+    final isFavorite = _isFavorite(asset);
+    return Positioned(
+      right: 16,
+      bottom: 24,
+      child: SafeArea(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (asset.hasRemote)
+              button(
+                key: const Key('slideshow_favorite'),
+                icon: isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                color: isFavorite ? Colors.redAccent : null,
+                onPressed: _toggleFavorite,
+              ),
+            button(
+              key: const Key('slideshow_share'),
+              icon: Icons.ios_share_rounded,
+              onPressed: _sharing ? null : _shareCurrent,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _onConfigChanged(SlideshowConfig? previous, SlideshowConfig next) {
@@ -453,6 +579,7 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
                 ),
               ),
             ),
+          _getActionButtons(context),
         ],
       ),
     );

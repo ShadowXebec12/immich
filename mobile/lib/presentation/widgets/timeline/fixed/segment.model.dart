@@ -26,6 +26,8 @@ import 'package:immich_mobile/routing/router.dart';
 
 class FixedSegment extends Segment {
   final double tileHeight;
+  final double tileWidth;
+  final bool uncropped;
   final int columnCount;
   final double mainAxisExtend;
 
@@ -37,11 +39,14 @@ class FixedSegment extends Segment {
     required super.firstAssetIndex,
     required super.bucket,
     required this.tileHeight,
+    double? tileWidth,
+    this.uncropped = false,
     required this.columnCount,
     required super.headerExtent,
     required super.spacing,
     required super.header,
   }) : assert(tileHeight != 0),
+       tileWidth = tileWidth ?? tileHeight,
        mainAxisExtend = tileHeight + spacing;
 
   @override
@@ -83,6 +88,8 @@ class FixedSegment extends Segment {
       assetIndex: firstAssetIndex + assetIndex,
       assetCount: numberOfAssets,
       tileHeight: tileHeight,
+      tileWidth: tileWidth,
+      uncropped: uncropped,
       spacing: spacing,
       columnCount: columnCount,
     );
@@ -93,6 +100,8 @@ class _FixedSegmentRow extends ConsumerWidget {
   final int assetIndex;
   final int assetCount;
   final double tileHeight;
+  final double tileWidth;
+  final bool uncropped;
   final double spacing;
   final int columnCount;
 
@@ -100,6 +109,8 @@ class _FixedSegmentRow extends ConsumerWidget {
     required this.assetIndex,
     required this.assetCount,
     required this.tileHeight,
+    required this.tileWidth,
+    required this.uncropped,
     required this.spacing,
     required this.columnCount,
   });
@@ -108,7 +119,8 @@ class _FixedSegmentRow extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isScrubbing = ref.watch(timelineStateProvider.select((s) => s.isScrubbing));
     final timelineService = ref.watch(timelineServiceProvider);
-    final isDynamicLayout = columnCount <= (context.isMobile ? 2 : 3);
+    // Uncropped tiles keep one fixed shape; the upstream dynamic widths only apply to square tiles
+    final isDynamicLayout = !uncropped && columnCount <= (context.isMobile ? 2 : 3);
 
     if (timelineService.hasRange(assetIndex, assetCount)) {
       return _buildAssetRow(
@@ -135,7 +147,7 @@ class _FixedSegmentRow extends ConsumerWidget {
   }
 
   Widget _buildPlaceholder(BuildContext context) {
-    return SegmentBuilder.buildPlaceholder(context, assetCount, size: Size.square(tileHeight), spacing: spacing);
+    return SegmentBuilder.buildPlaceholder(context, assetCount, size: Size(tileWidth, tileHeight), spacing: spacing);
   }
 
   Widget _buildAssetRow(
@@ -144,7 +156,7 @@ class _FixedSegmentRow extends ConsumerWidget {
     TimelineService timelineService,
     bool isDynamicLayout,
   ) {
-    final widths = List.filled(assets.length, tileHeight);
+    final widths = List.filled(assets.length, tileWidth);
 
     if (isDynamicLayout) {
       final aspectRatios = assets.map((e) => (e.width ?? 1) / (e.height ?? 1)).toList();
@@ -169,7 +181,7 @@ class _FixedSegmentRow extends ConsumerWidget {
       int index = 0;
       for (final ratio in arConfiguration) {
         // Distribute the available width proportionally based on aspect ratio configuration
-        widths[index++] = ((ratio * assets.length) / sum) * tileHeight;
+        widths[index++] = ((ratio * assets.length) / sum) * tileWidth;
       }
     }
 
@@ -183,6 +195,7 @@ class _FixedSegmentRow extends ConsumerWidget {
             asset: assets[i],
             assetIndex: assetIndex + i,
             size: Size(widths[i], tileHeight),
+            fit: uncropped ? BoxFit.contain : BoxFit.cover,
           ),
         ),
     ];
@@ -203,8 +216,15 @@ class _AssetTileWidget extends ConsumerWidget {
   final BaseAsset asset;
   final int assetIndex;
   final Size size;
+  final BoxFit fit;
 
-  const _AssetTileWidget({super.key, required this.asset, required this.assetIndex, required this.size});
+  const _AssetTileWidget({
+    super.key,
+    required this.asset,
+    required this.assetIndex,
+    required this.size,
+    this.fit = BoxFit.cover,
+  });
 
   Future _handleOnTap(
     BuildContext ctx,
@@ -285,6 +305,7 @@ class _AssetTileWidget extends ConsumerWidget {
           showStorageIndicator: showStorageIndicator,
           showStackIndicator: showStackIndicator,
           heroOffset: heroOffset,
+          fit: fit,
         ),
       ),
     );

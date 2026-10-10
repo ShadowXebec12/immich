@@ -1,5 +1,7 @@
 import 'package:auto_route/auto_route.dart';
+import 'package:collection/collection.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/memory.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
 import 'package:immich_mobile/domain/services/asset.service.dart' as beta_asset_service;
@@ -15,6 +17,8 @@ import 'package:immich_mobile/providers/infrastructure/people.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
+import 'package:immich_mobile/utils/timeline_prime.dart';
+import 'package:immich_mobile/utils/wildcard_match.dart';
 
 final deepLinkServiceProvider = Provider(
   (ref) => DeepLinkService(
@@ -53,7 +57,10 @@ class DeepLinkService {
     return switch (intent) {
       "memory" => await _buildMemoryDeepLink(queryParams['id']),
       "asset" => await _buildAssetDeepLink(queryParams['id'] ?? '', ref),
-      "album" => await _buildAlbumDeepLink(queryParams['id'] ?? ''),
+      // Custom fork: albums can also be opened by name, e.g. immichcustom://album?name=ditto*v5
+      "album" => await _buildAlbumDeepLink(queryParams['id'] ?? '', name: queryParams['name']),
+      // Custom fork: immichcustom://slideshow?album=<name or id>
+      "slideshow" => await _buildSlideshowDeepLink(queryParams['album'] ?? queryParams['name'] ?? ''),
       "people" => await _buildPeopleDeepLink(queryParams['id'] ?? ''),
       "activity" => await _buildActivityDeepLink(queryParams['albumId'] ?? ''),
       _ => null,
@@ -126,14 +133,46 @@ class DeepLinkService {
     );
   }
 
-  Future<PageRouteInfo?> _buildAlbumDeepLink(String albumId) async {
-    final album = await _betaRemoteAlbumService.get(albumId);
+  Future<PageRouteInfo?> _buildAlbumDeepLink(String albumId, {String? name}) async {
+    final album = albumId.isNotEmpty ? await _betaRemoteAlbumService.get(albumId) : await _findAlbum(name ?? '');
 
     if (album == null) {
       return null;
     }
 
     return RemoteAlbumRoute(album: album);
+  }
+
+  // Custom fork: album by id, exact name (ignoring case), or first wildcard match
+  Future<RemoteAlbum?> _findAlbum(String idOrName) async {
+    final wanted = idOrName.trim();
+    if (wanted.isEmpty) {
+      return null;
+    }
+
+    final byId = await _betaRemoteAlbumService.get(wanted);
+    if (byId != null) {
+      return byId;
+    }
+
+    final albums = await _betaRemoteAlbumService.getAll();
+    return albums.firstWhereOrNull((a) => a.name.toLowerCase() == wanted.toLowerCase()) ??
+        albums.firstWhereOrNull((a) => wildcardMatch(a.name, wanted));
+  }
+
+  Future<PageRouteInfo?> _buildSlideshowDeepLink(String idOrName) async {
+    final album = await _findAlbum(idOrName);
+    if (album == null) {
+      return null;
+    }
+
+    final timeline = _betaTimelineFactory.remoteAlbum(albumId: album.id);
+    if (!await primeTimeline(timeline)) {
+      await timeline.dispose();
+      return null;
+    }
+
+    return SlideshowRoute(timeline: timeline);
   }
 
   Future<PageRouteInfo?> _buildActivityDeepLink(String albumId) async {

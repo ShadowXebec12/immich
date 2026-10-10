@@ -100,7 +100,7 @@
         <string>Deep Link</string>
         <key>CFBundleURLSchemes</key>
         <array>
-          <string>immich</string>
+          <string>immichcustom</string>
         </array>
       </dict>
     </array>
