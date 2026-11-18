@@ -66,7 +66,7 @@ void main() {
       await tester.pump();
 
       await tester.enterText(find.byKey(const Key('album_search_field')), 'nobara');
-      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 30));
       expect(ref.read(albumSearchQueryProvider('album-1')), '', reason: 'debounced, not yet applied');
       await tester.pump(const Duration(milliseconds: 200));
       expect(ref.read(albumSearchQueryProvider('album-1')), 'nobara');

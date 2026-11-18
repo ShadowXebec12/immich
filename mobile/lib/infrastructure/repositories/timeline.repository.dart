@@ -166,9 +166,9 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
   }
 
   // Custom fork: assets of an album whose file name or description matches every search term
-  TimelineQuery remoteAlbumSearch(String albumId, String query) => (
-    bucketSource: () => _watchRemoteAlbumSearchBucket(albumId, query),
-    assetSource: (offset, count) => _getRemoteAlbumSearchAssets(albumId, query, offset: offset, count: count),
+  TimelineQuery remoteAlbumSearch(String albumId, String query, {AlbumSearchField field = AlbumSearchField.both}) => (
+    bucketSource: () => _watchRemoteAlbumSearchBucket(albumId, query, field),
+    assetSource: (offset, count) => _getRemoteAlbumSearchAssets(albumId, query, field, offset: offset, count: count),
     origin: TimelineOrigin.remoteAlbum,
   );
 
@@ -185,24 +185,29 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     ),
   ];
 
-  Expression<bool> _albumSearchFilter(String albumId, String query) {
+  Expression<bool> _albumSearchFilter(String albumId, String query, AlbumSearchField field) {
     Expression<bool> filter =
         _db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId);
     for (final pattern in likePatterns(query)) {
+      final byName = _db.remoteAssetEntity.name.like(pattern, escapeChar: r'\');
+      final byDesc = _db.remoteExifEntity.description.like(pattern, escapeChar: r'\');
       filter =
           filter &
-          (_db.remoteAssetEntity.name.like(pattern, escapeChar: r'\') |
-              _db.remoteExifEntity.description.like(pattern, escapeChar: r'\'));
+          switch (field) {
+            AlbumSearchField.name => byName,
+            AlbumSearchField.description => byDesc,
+            AlbumSearchField.both => byName | byDesc,
+          };
     }
     return filter;
   }
 
-  Stream<List<Bucket>> _watchRemoteAlbumSearchBucket(String albumId, String query) {
+  Stream<List<Bucket>> _watchRemoteAlbumSearchBucket(String albumId, String query, AlbumSearchField field) {
     final assetCountExp = _db.remoteAssetEntity.id.count();
     final countQuery = _db.remoteAssetEntity.selectOnly()
       ..addColumns([assetCountExp])
       ..join(_albumSearchJoins())
-      ..where(_albumSearchFilter(albumId, query));
+      ..where(_albumSearchFilter(albumId, query, field));
 
     return countQuery
         .map((row) => _generateBuckets(row.read(assetCountExp) ?? 0))
@@ -212,7 +217,8 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
 
   Future<List<BaseAsset>> _getRemoteAlbumSearchAssets(
     String albumId,
-    String query, {
+    String query,
+    AlbumSearchField field, {
     required int offset,
     required int count,
   }) {
@@ -224,7 +230,7 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     );
 
     final assetQuery = _db.remoteAssetEntity.select().addColumns([localId]).join(_albumSearchJoins())
-      ..where(_albumSearchFilter(albumId, query))
+      ..where(_albumSearchFilter(albumId, query, field))
       ..orderBy([OrderingTerm.desc(_db.remoteAssetEntity.createdAt)])
       ..limit(count, offset: offset);
 
@@ -893,3 +899,6 @@ extension on String {
     return DateFormat(format, 'en').parse(this);
   }
 }
+
+/// Custom fork: which field the in-album search matches.
+enum AlbumSearchField { both, name, description }

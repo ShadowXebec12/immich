@@ -212,10 +212,11 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
       overrides: [
         timelineServiceProvider.overrideWith((ref) {
           final query = ref.watch(albumSearchQueryProvider(_album.id))?.trim() ?? '';
+          final field = ref.watch(albumSearchFieldProvider(_album.id));
           final factory = ref.watch(timelineFactoryProvider);
           final byName = ref.watch(appConfigProvider.select((c) => c.album.nameSortIds.contains(_album.id)));
           final timelineService = query.isNotEmpty
-              ? factory.remoteAlbumSearch(albumId: _album.id, query: query)
+              ? factory.remoteAlbumSearch(albumId: _album.id, query: query, field: field)
               : byName
               ? factory.remoteAlbumByName(albumId: _album.id)
               : factory.remoteAlbum(albumId: _album.id);

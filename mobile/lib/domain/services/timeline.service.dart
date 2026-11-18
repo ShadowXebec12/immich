@@ -63,8 +63,11 @@ class TimelineFactory {
       TimelineService(_timelineRepository.remoteAlbumByName(albumId));
 
   // Custom fork: search inside one album (file name / description)
-  TimelineService remoteAlbumSearch({required String albumId, required String query}) =>
-      TimelineService(_timelineRepository.remoteAlbumSearch(albumId, query));
+  TimelineService remoteAlbumSearch({
+    required String albumId,
+    required String query,
+    AlbumSearchField field = AlbumSearchField.both,
+  }) => TimelineService(_timelineRepository.remoteAlbumSearch(albumId, query, field: field));
 
   TimelineService remoteAssets(String userId) => TimelineService(_timelineRepository.remote(userId, groupBy));
 
