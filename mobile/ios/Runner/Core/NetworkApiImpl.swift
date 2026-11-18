@@ -62,7 +62,7 @@ class NetworkApiImpl: NetworkApi {
   }
   
   func getAppGroupId() throws -> String {
-    return Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as! String
+    return APP_GROUP
   }
 
   func setRequestHeaders(headers: [String : String], serverUrls: [String], token: String?) throws {

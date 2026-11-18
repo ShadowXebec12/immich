@@ -4,7 +4,12 @@ import native_video_player
 let CLIENT_CERT_LABEL = "app.alextran.immich.client_identity"
 let HEADERS_KEY = "immich.request_headers"
 let SERVER_URLS_KEY = "immich.server_urls"
-let APP_GROUP = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as! String
+let APP_GROUP = Bundle.main.object(forInfoDictionaryKey: "AppGroupId") as? String ?? ""
+// Custom fork: a free-Apple-ID sideload usually has no working app group. Then the group cookie
+// store and defaults do not persist, the login cookie is gone on relaunch and the app logs out
+// (and wipes its database). Fall back to the app's own storage when the group container is missing.
+let APP_GROUP_AVAILABLE: Bool =
+  !APP_GROUP.isEmpty && FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: APP_GROUP) != nil
 let COOKIE_EXPIRY_DAYS: TimeInterval = 400
 
 enum AuthCookie: CaseIterable {
@@ -29,7 +34,8 @@ enum AuthCookie: CaseIterable {
 }
 
 extension UserDefaults {
-  static let group = UserDefaults(suiteName: APP_GROUP)!
+  static let group: UserDefaults =
+    APP_GROUP_AVAILABLE ? (UserDefaults(suiteName: APP_GROUP) ?? .standard) : .standard
 }
 
 /// Manages a shared URLSession with SSL configuration support.
@@ -55,7 +61,8 @@ class URLSessionManager: NSObject {
     let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
     return "immich-ios/\(version)"
   }()
-  static let cookieStorage = HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: APP_GROUP)
+  static let cookieStorage: HTTPCookieStorage =
+    APP_GROUP_AVAILABLE ? HTTPCookieStorage.sharedCookieStorage(forGroupContainerIdentifier: APP_GROUP) : .shared
   private static var serverUrls: [String] = []
   private static var isSyncing = false
 
