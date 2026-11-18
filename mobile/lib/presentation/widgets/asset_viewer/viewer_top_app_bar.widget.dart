@@ -10,6 +10,7 @@ import 'package:immich_mobile/presentation/actions/action.widget.dart';
 import 'package:immich_mobile/presentation/actions/favorite.action.dart';
 import 'package:immich_mobile/presentation/widgets/action_buttons/motion_photo_action_button.widget.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/viewer_kebab_menu.widget.dart';
+import 'package:immich_mobile/presentation/widgets/asset_viewer/viewer_select_button.widget.dart';
 import 'package:immich_mobile/providers/activity.provider.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/asset_viewer/asset.provider.dart';
@@ -61,6 +62,7 @@ class ViewerTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
           },
         ),
 
+      ViewerSelectButton(asset: asset),
       const ActionIconButton(action: FavoriteAction(source: .viewer)),
 
       ImmichColorOverride(color: null, child: ViewerKebabMenu(originalTheme: originalTheme)),

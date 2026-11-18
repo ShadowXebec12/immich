@@ -9,6 +9,7 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_viewer.page.dart';
+import 'package:immich_mobile/presentation/widgets/asset_viewer/viewer_select_button.widget.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail_tile.widget.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/fixed/row.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/header.widget.dart';
@@ -246,6 +247,8 @@ class _AssetTileWidget extends ConsumerWidget {
 
       ref.read(isPlayingMotionVideoProvider.notifier).playing = false;
       AssetViewer.setAsset(ref, asset, thumbnailSize: remoteSize);
+      // Custom fork: the viewer's Select button edits this grid's selection
+      ref.read(viewerSelectContainerProvider.notifier).state = ProviderScope.containerOf(ctx, listen: false);
       unawaited(
         ctx.pushRoute(
           AssetViewerRoute(
