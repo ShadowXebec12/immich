@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/custom/gallery_labels.dart';
+import 'package:immich_mobile/custom/label_sheet.dart';
+import 'package:immich_mobile/providers/infrastructure/asset_viewer/asset.provider.dart';
+import 'package:immich_mobile/services/action.service.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/events.model.dart';
 import 'package:immich_mobile/domain/utils/event_stream.dart';
@@ -322,13 +325,22 @@ class _Chip extends StatelessWidget {
   );
 }
 
-/// Grouped label sheet (label_groups.txt from the PC). Tap a label to add it, tap a ticked one to remove it.
-Future<void> showLabelSheet(BuildContext context, WidgetRef ref, BaseAsset asset) async {
+/// The mix gallery label sheet (lib/custom/label_sheet.dart) for this photo, or for the grid
+/// selection when there is one. Save applies the picks in one DOpus call per add / remove.
+Future<void> showLabelSheet(BuildContext context, WidgetRef ref, BaseAsset asset) =>
+    showLabelSheetFor(context, ref, labelTargets(ref, asset));
+
+Future<void> showLabelSheetFor(BuildContext context, WidgetRef ref, List<BaseAsset> targets) async {
+  if (targets.isEmpty) {
+    return;
+  }
   final notifier = ref.read(galleryLabelsProvider.notifier);
-  notifier.want(asset);
-  final List<LabelGroup> groups;
+  for (final t in targets) {
+    notifier.want(t);
+  }
+  final LabelSheetData data;
   try {
-    groups = await notifier.groups();
+    data = await LabelSheetData.load();
   } catch (_) {
     ref.read(toastServiceProvider).error("PC server not reachable");
     return;
@@ -336,99 +348,196 @@ Future<void> showLabelSheet(BuildContext context, WidgetRef ref, BaseAsset asset
   if (!context.mounted) {
     return;
   }
-  final targets = labelTargets(ref, asset);
+  final cache = ref.read(galleryLabelsProvider);
+  final have = <String, int>{};
+  for (final t in targets) {
+    for (final l in cache[labelKey(t)] ?? const <String>[]) {
+      have[l] = (have[l] ?? 0) + 1;
+    }
+  }
+  // "on" = on every target photo (one photo: its labels)
+  final current = {
+    for (final e in have.entries)
+      if (e.value == targets.length) e.key,
+  };
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    builder: (context) => _LabelSheet(asset: asset, groups: groups, count: targets.length),
+    backgroundColor: const Color(0xFF1C1C1E),
+    builder: (context) => FractionallySizedBox(
+      heightFactor: 0.92,
+      child: MixLabelSheet(
+        data: data,
+        current: current,
+        have: have,
+        count: targets.length,
+        onSave: (adds, removes) => unawaited(_saveLabels(ref, targets, adds, removes)),
+      ),
+    ),
   );
 }
 
-class _LabelSheet extends ConsumerStatefulWidget {
-  const _LabelSheet({required this.asset, required this.groups, required this.count});
-
-  final BaseAsset asset;
-  final List<LabelGroup> groups;
-  final int count;
-
-  @override
-  ConsumerState<_LabelSheet> createState() => _LabelSheetState();
+Future<void> _saveLabels(WidgetRef ref, List<BaseAsset> targets, List<String> adds, List<String> removes) async {
+  final toast = ref.read(toastServiceProvider);
+  final notifier = ref.read(galleryLabelsProvider.notifier);
+  toast.info("Labeling ${targets.length == 1 ? '' : '${targets.length} photos '}...");
+  final errors = [
+    if (removes.isNotEmpty) await notifier.setLabels(targets, removes, add: false),
+    if (adds.isNotEmpty) await notifier.setLabels(targets, adds, add: true),
+  ].nonNulls.toList();
+  if (errors.isNotEmpty) {
+    toast.error(errors.first);
+    return;
+  }
+  for (final l in adds) {
+    notifier.recent
+      ..remove(l)
+      ..insert(0, l);
+  }
+  await recordLabelHistory(ref, adds);
+  toast.success(
+    [
+      if (adds.isNotEmpty) "Added ${adds.join(', ')}",
+      if (removes.isNotEmpty) "Removed ${removes.join(', ')}",
+    ].join(' · '),
+  );
+  if (adds.isNotEmpty && targets.length == 1) {
+    EventStream.shared.emit(const ViewerAdvanceEvent());
+  }
 }
 
-class _LabelSheetState extends ConsumerState<_LabelSheet> {
-  String _filter = '';
+/// Quick tag menu for the grid selection (bad / average / no name / test style).
+Future<void> showQuickTagMenu(BuildContext context, WidgetRef ref, List<BaseAsset> targets) async {
+  final picked = await showModalBottomSheet<QuickTag>(
+    context: context,
+    useSafeArea: true,
+    builder: (context) => ListView(
+      shrinkWrap: true,
+      children: [
+        ListTile(title: Text("Quick tag ${targets.length} photo${targets.length == 1 ? '' : 's'}")),
+        for (final tag in kQuickTags)
+          ListTile(
+            key: ValueKey('quick_tag_menu_${tag.title}'),
+            leading: const Icon(Icons.bookmark_add_outlined),
+            title: Text(tag.title),
+            onTap: () => Navigator.of(context).pop(tag),
+          ),
+      ],
+    ),
+  );
+  if (picked == null) {
+    return;
+  }
+  final toast = ref.read(toastServiceProvider);
+  final notifier = ref.read(galleryLabelsProvider.notifier);
+  String? error;
+  if (picked.label != null) {
+    error = await notifier.setLabels(targets, [picked.label!], add: true);
+  } else {
+    for (final t in targets) {
+      error = await notifier.setQuickTag(t, picked.list!, add: true);
+      if (error != null) {
+        break;
+      }
+    }
+  }
+  error == null ? toast.success("Added ${targets.length} to ${picked.title}") : toast.error(error);
+}
 
-  @override
-  Widget build(BuildContext context) {
-    final current = ref.watch(galleryLabelsProvider.select((m) => m[labelKey(widget.asset)])) ?? const [];
-    final query = _filter.trim().toLowerCase();
-    final groups = [
-      for (final g in widget.groups)
-        LabelGroup(g.name, [
-          for (final l in g.labels)
-            if (query.isEmpty || l.toLowerCase().contains(query)) l,
-        ]),
-    ].where((g) => g.labels.isNotEmpty).toList();
+/// Stars: Immich's own rating (shown in Immich) + the mix gallery ratings json on the PC.
+Future<void> rateAssets(WidgetRef ref, List<BaseAsset> targets, int stars) async {
+  final toast = ref.read(toastServiceProvider);
+  final service = ref.read(actionServiceProvider);
+  final notifier = ref.read(galleryLabelsProvider.notifier);
+  String? error;
+  for (final t in targets) {
+    final id = t.remoteId;
+    if (id == null) {
+      continue;
+    }
+    try {
+      await service.updateRating(id, stars == 0 ? null : stars);
+    } catch (_) {
+      error = "Immich rating failed";
+    }
+    error ??= await notifier.rate(t, stars);
+  }
+  error == null ? toast.success(stars == 0 ? "Rating cleared" : "Rated $stars") : toast.error(error);
+}
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.8),
+Future<void> showRateMenu(BuildContext context, WidgetRef ref, List<BaseAsset> targets) async {
+  final stars = await showModalBottomSheet<int>(
+    context: context,
+    useSafeArea: true,
+    builder: (context) => Padding(
+      padding: const EdgeInsets.all(16),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(
-            title: Text(widget.count == 1 ? "Labels" : "Labels for ${widget.count} selected"),
-            trailing: IconButton(
-              key: const Key('viewer_gesture_settings'),
-              tooltip: "Gestures",
-              icon: const Icon(Icons.touch_app_outlined),
-              onPressed: () => unawaited(showGestureSettings(context, ref)),
-            ),
+          Text("Rate ${targets.length} photo${targets.length == 1 ? '' : 's'}"),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 1; i <= 5; i++)
+                IconButton(
+                  key: ValueKey('rate_menu_$i'),
+                  iconSize: 36,
+                  icon: const Icon(Icons.star_rounded, color: Colors.amber),
+                  onPressed: () => Navigator.of(context).pop(i),
+                ),
+            ],
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: TextField(
-              key: const Key('label_sheet_filter'),
-              decoration: const InputDecoration(
-                hintText: "Filter labels",
-                isDense: true,
-                prefixIcon: Icon(Icons.search),
-              ),
-              onChanged: (v) => setState(() => _filter = v),
-            ),
-          ),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-              children: [
-                for (final g in groups) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(top: 12, bottom: 6),
-                    child: Text(g.name, style: Theme.of(context).textTheme.labelLarge),
-                  ),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      for (final label in g.labels)
-                        FilterChip(
-                          key: ValueKey('label_$label'),
-                          label: Text(label),
-                          selected: current.contains(label),
-                          onSelected: (on) {
-                            Navigator.of(context).pop();
-                            unawaited(applyLabel(ref, widget.asset, label, add: on));
-                          },
-                        ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(0), child: const Text("Clear rating")),
         ],
       ),
+    ),
+  );
+  if (stars != null) {
+    await rateAssets(ref, targets, stars);
+  }
+}
+
+/// Star row in the viewer (like the mix gallery); tap the lit star again to clear.
+class ViewerStarRow extends ConsumerStatefulWidget {
+  const ViewerStarRow({super.key, required this.asset});
+
+  final BaseAsset asset;
+
+  @override
+  ConsumerState<ViewerStarRow> createState() => _ViewerStarRowState();
+}
+
+class _ViewerStarRowState extends ConsumerState<ViewerStarRow> {
+  final Map<String, int> _set = {};
+
+  @override
+  Widget build(BuildContext context) {
+    final exif = ref.watch(assetExifProvider(widget.asset)).valueOrNull;
+    final stars = _set[widget.asset.heroTag] ?? exif?.rating ?? 0;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 1; i <= 5; i++)
+          GestureDetector(
+            key: ValueKey('viewer_star_$i'),
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              final value = stars == i ? 0 : i;
+              setState(() => _set[widget.asset.heroTag] = value);
+              unawaited(rateAssets(ref, [widget.asset], value));
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Icon(
+                i <= stars ? Icons.star_rounded : Icons.star_border_rounded,
+                color: i <= stars ? Colors.amber : Colors.white70,
+                size: 26,
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -534,13 +643,13 @@ class ViewerLabelButton extends ConsumerWidget {
       items: [
         for (final label in recent)
           CheckedPopupMenuItem(value: label, checked: current.contains(label), child: Text(label)),
-        const PopupMenuItem(value: ' all', child: Text("All labels...")),
+        const PopupMenuItem(value: '\u0000all', child: Text("All labels...")),
       ],
     );
     if (picked == null || !context.mounted) {
       return;
     }
-    if (picked == ' all') {
+    if (picked == '\u0000all') {
       await showLabelSheet(context, ref, asset);
       return;
     }

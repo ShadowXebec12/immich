@@ -10,7 +10,10 @@ abstract class ViewerConfig with _$ViewerConfig {
     @Default(false) bool loadOriginalVideo,
     @Default(true) bool autoPlayVideo,
     @Default(false) bool tapToNavigate,
-    // Custom fork: viewer gestures as "gesture=action" (see lib/custom/viewer_gestures.dart)
+    // Custom fork: viewer gestures as "gesture=action" (see lib/custom/viewer_tools.dart)
     @Default(<String>[]) List<String> gestures,
+    // Custom fork: labels added from this app (JSON entries) and pinned label sets (see lib/custom/label_sheet.dart)
+    @Default(<String>[]) List<String> labelHistory,
+    @Default(<String>[]) List<String> labelPins,
   }) = _ViewerConfig;
 }

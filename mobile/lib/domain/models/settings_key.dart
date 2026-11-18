@@ -25,6 +25,8 @@ enum SettingsKey<T> {
   viewerTapToNavigate<bool>(),
   // Custom fork: viewer gesture -> action pairs
   viewerGestures<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  viewerLabelHistory<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  viewerLabelPins<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Network
   networkAutoEndpointSwitching<bool>(),

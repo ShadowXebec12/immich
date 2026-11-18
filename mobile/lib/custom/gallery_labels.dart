@@ -190,6 +190,62 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
     }
   }
 
+  /// Several labels in one DOpus call (label sheet Save). Returns an error text, or null when done.
+  Future<String?> setLabels(List<BaseAsset> assets, List<String> labels, {required bool add}) async {
+    if (assets.isEmpty || labels.isEmpty) {
+      return null;
+    }
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$kGalleryServer/label_batch'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({
+              'items': [for (final a in assets) _item(a)],
+              'labels': labels,
+              'op': add ? 'add' : 'remove',
+            }),
+          )
+          .timeout(const Duration(seconds: 180));
+      final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+      if (res.statusCode != 200 || body['ok'] != true) {
+        return (body['err'] ?? 'Label failed (${res.statusCode})').toString();
+      }
+      final results = (body['results'] as Map?) ?? {};
+      final done = {
+        for (final e in results.entries)
+          if (e.value == true) e.key.toString().split(RegExp(r'[\\/]')).last.trim().toLowerCase(),
+      };
+      final keys = assets.map(labelKey).where(done.contains).toList();
+      for (final label in labels) {
+        _setLabels(keys, label, add);
+      }
+      final failed = assets.length - keys.length;
+      return failed == 0 ? null : '$failed of ${assets.length} not labeled';
+    } on TimeoutException {
+      return 'PC server took too long';
+    } catch (_) {
+      return 'PC server not reachable';
+    }
+  }
+
+  /// Star rating in the mix gallery's ratings json (0 clears). Returns an error text, or null.
+  Future<String?> rate(BaseAsset asset, int stars) async {
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$kGalleryServer/rate'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({..._item(asset), 'value': stars}),
+          )
+          .timeout(const Duration(seconds: 20));
+      final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+      return res.statusCode == 200 && body['ok'] == true ? null : (body['err'] ?? 'Rating failed').toString();
+    } catch (_) {
+      return 'PC server not reachable';
+    }
+  }
+
   /// Quick-tag txt membership of one asset (keys like "bad", "no_name").
   Future<Set<String>> quickTagsOf(BaseAsset asset) async {
     final id = _item(asset)['immich_id'];
