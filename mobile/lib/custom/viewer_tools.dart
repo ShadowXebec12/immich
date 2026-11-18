@@ -510,3 +510,51 @@ class GridLabelBadges extends ConsumerWidget {
     );
   }
 }
+
+/// Tag button next to the viewer's back arrow (like the mix gallery): tap = recent labels,
+/// long press = the full label sheet.
+class ViewerLabelButton extends ConsumerWidget {
+  const ViewerLabelButton({super.key, required this.asset});
+
+  final BaseAsset asset;
+
+  Future<void> _recentMenu(BuildContext context, WidgetRef ref) async {
+    final recent = ref.read(galleryLabelsProvider.notifier).recent;
+    if (recent.isEmpty) {
+      await showLabelSheet(context, ref, asset);
+      return;
+    }
+    final box = context.findRenderObject() as RenderBox?;
+    final origin = box?.localToGlobal(Offset.zero) ?? Offset.zero;
+    final height = box?.size.height ?? 0;
+    final current = ref.read(galleryLabelsProvider)[labelKey(asset)] ?? const [];
+    final picked = await showMenu<String>(
+      context: context,
+      position: RelativeRect.fromLTRB(origin.dx, origin.dy + height, origin.dx + 1, 0),
+      items: [
+        for (final label in recent)
+          CheckedPopupMenuItem(value: label, checked: current.contains(label), child: Text(label)),
+        const PopupMenuItem(value: ' all', child: Text("All labels...")),
+      ],
+    );
+    if (picked == null || !context.mounted) {
+      return;
+    }
+    if (picked == ' all') {
+      await showLabelSheet(context, ref, asset);
+      return;
+    }
+    await applyLabel(ref, asset, picked, add: !current.contains(picked));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => GestureDetector(
+    key: const Key('viewer_tag_button'),
+    onLongPress: () => unawaited(showLabelSheet(context, ref, asset)),
+    child: IconButton(
+      tooltip: "Labels",
+      icon: const Icon(Icons.sell_outlined),
+      onPressed: () => unawaited(_recentMenu(context, ref)),
+    ),
+  );
+}

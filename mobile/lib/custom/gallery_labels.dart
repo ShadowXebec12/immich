@@ -48,6 +48,9 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
   Timer? _timer;
   List<LabelGroup>? _groups;
 
+  /// Labels added this session, newest first (viewer tag button menu).
+  final List<String> recent = [];
+
   @override
   Map<String, List<String>> build() {
     ref.onDispose(() => _timer?.cancel());
@@ -158,6 +161,14 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
       final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
       if (res.statusCode != 200 || body['ok'] != true) {
         return (body['err'] ?? 'Label failed (${res.statusCode})').toString();
+      }
+      if (add) {
+        recent
+          ..remove(label)
+          ..insert(0, label);
+        if (recent.length > 10) {
+          recent.removeLast();
+        }
       }
       if (assets.length == 1) {
         _setLabels([labelKey(assets.first)], label, add);

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/datetime_extensions.dart';
@@ -101,7 +102,15 @@ class ViewerTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
                   data: context.themeData.copyWith(iconTheme: const IconThemeData(size: 22, color: Colors.white)),
                   child: NavigationToolbar(
                     centerMiddle: true,
-                    leading: const _AppBarBackButton(),
+                    // Custom fork: tag button next to back (tap = recent labels, hold = label sheet)
+                    leading: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _AppBarBackButton(),
+                        if (!showingDetails && !isReadonlyModeEnabled && !isInLockedView && asset.hasRemote)
+                          ViewerLabelButton(asset: asset),
+                      ],
+                    ),
                     middle: showingDetails ? null : _AssetInfoTitle(asset: asset),
                     trailing: !showingDetails && !isReadonlyModeEnabled
                         ? ImmichColorOverride(
