@@ -166,8 +166,20 @@ class AlbumFolderBar extends ConsumerWidget {
 
 /// Bottom sheet opened by long-pressing an album: pick the folder it lives in.
 Future<void> showMoveAlbumToFolderSheet(BuildContext context, WidgetRef ref, RemoteAlbum album) async {
+  await showMoveAlbumsToFolderSheet(context, ref, [album]);
+}
+
+/// Same sheet for several albums at once. Returns true when they were moved.
+Future<bool> showMoveAlbumsToFolderSheet(BuildContext context, WidgetRef ref, List<RemoteAlbum> albums) async {
+  if (albums.isEmpty) {
+    return false;
+  }
   final folders = ref.read(albumFoldersProvider);
-  final current = folders.folderOf(album.id);
+  final currents = albums.map((a) => folders.folderOf(a.id)).toSet();
+  final current = currents.length == 1 ? currents.first : '\u0000';
+  final title = albums.length == 1
+      ? "Move \"${albums.first.name}\" to folder"
+      : "Move ${albums.length} albums to folder";
 
   final choice = await showModalBottomSheet<String>(
     context: context,
@@ -178,7 +190,7 @@ Future<void> showMoveAlbumToFolderSheet(BuildContext context, WidgetRef ref, Rem
         child: ListView(
           shrinkWrap: true,
           children: [
-            ListTile(title: Text("Move \"${album.name}\" to folder", style: context.textTheme.titleMedium)),
+            ListTile(title: Text(title, style: context.textTheme.titleMedium)),
             for (final folder in folders.names)
               ListTile(
                 key: ValueKey('move_to_$folder'),
@@ -207,20 +219,24 @@ Future<void> showMoveAlbumToFolderSheet(BuildContext context, WidgetRef ref, Rem
   );
 
   if (choice == null || !context.mounted) {
-    return;
+    return false;
   }
 
+  AlbumFolders moveAll(AlbumFolders start, String? target) =>
+      albums.fold(start, (acc, album) => acc.move(album.id, target));
+
   if (choice == 'none') {
-    await saveAlbumFolders(ref, folders.move(album.id, null));
+    await saveAlbumFolders(ref, moveAll(folders, null));
   } else if (choice == 'new') {
     final name = await _askFolderName(context, title: "New folder");
     if (name == null || name.isEmpty) {
-      return;
+      return false;
     }
     final added = folders.add(name);
     final target = added.names.firstWhere((n) => n.toLowerCase() == name.toLowerCase());
-    await saveAlbumFolders(ref, added.move(album.id, target));
+    await saveAlbumFolders(ref, moveAll(added, target));
   } else {
-    await saveAlbumFolders(ref, folders.move(album.id, choice.substring(2)));
+    await saveAlbumFolders(ref, moveAll(folders, choice.substring(2)));
   }
+  return true;
 }

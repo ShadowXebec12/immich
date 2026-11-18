@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
@@ -34,7 +35,10 @@ class AlbumSelector extends ConsumerStatefulWidget {
   final AlbumSelectorCallback onAlbumSelected;
   final Function? onKeyboardExpanded;
 
-  const AlbumSelector({super.key, required this.onAlbumSelected, this.onKeyboardExpanded});
+  const AlbumSelector({super.key, required this.onAlbumSelected, this.onKeyboardExpanded, this.selectable = false});
+
+  /// Custom fork: long-press / drag to select albums and move them to a folder (Albums tab only).
+  final bool selectable;
 
   @override
   ConsumerState<AlbumSelector> createState() => _AlbumSelectorState();
@@ -49,6 +53,8 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   List<RemoteAlbum> shownAlbums = [];
   // Custom fork: null = all albums, '' = albums in no folder, otherwise a folder name
   FolderFilter folderFilter;
+  // Custom fork: albums picked by long-press / drag (Albums tab)
+  final selection = AlbumSelection();
 
   AlbumFilter filter = const AlbumFilter(query: "", mode: QuickFilterMode.all);
   AlbumSort sort = const AlbumSort(mode: AlbumSortMode.lastModified, isReverse: true);
@@ -174,6 +180,7 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
   void dispose() {
     searchController.dispose();
     searchFocusNode.dispose();
+    selection.dispose();
     super.dispose();
   }
 
@@ -192,6 +199,7 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
               .where((a) => folders.folderOf(a.id) == (activeFolder == kUnfiledFolder ? null : activeFolder))
               .toList();
     void onAlbumLongPress(RemoteAlbum album) => unawaited(showMoveAlbumToFolderSheet(context, ref, album));
+    final albumSelection = widget.selectable ? selection : null;
 
     // refilter and sort when albums change
     ref.listen(remoteAlbumProvider.select((state) => state.albums), (_, _) async {
@@ -230,18 +238,21 @@ class _AlbumSelectorState extends ConsumerState<AlbumSelector> {
             selected: activeFolder,
             onSelected: (value) => setState(() => folderFilter = value),
           ),
+          if (albumSelection != null) _AlbumSelectionBar(selection: albumSelection, albums: sortedAlbums),
           isGrid
               ? _AlbumGrid(
                   albums: folderAlbums,
                   userId: userId,
                   onAlbumSelected: widget.onAlbumSelected,
                   onAlbumLongPress: onAlbumLongPress,
+                  selection: albumSelection,
                 )
               : _AlbumList(
                   albums: folderAlbums,
                   userId: userId,
                   onAlbumSelected: widget.onAlbumSelected,
                   onAlbumLongPress: onAlbumLongPress,
+                  selection: albumSelection,
                 ),
         ],
       ),
@@ -589,7 +600,15 @@ class _QuickSortAndViewMode extends StatelessWidget {
 }
 
 class _AlbumList extends ConsumerWidget {
-  const _AlbumList({required this.albums, required this.userId, required this.onAlbumSelected, this.onAlbumLongPress});
+  const _AlbumList({
+    required this.albums,
+    required this.userId,
+    required this.onAlbumSelected,
+    this.onAlbumLongPress,
+    this.selection,
+  });
+
+  final AlbumSelection? selection;
 
   final List<RemoteAlbum> albums;
   final String? userId;
@@ -639,8 +658,10 @@ class _AlbumList extends ConsumerWidget {
                 onDismissed: (direction) async {
                   await ref.read(remoteAlbumProvider.notifier).deleteAlbum(album.id);
                 },
-                child: GestureDetector(
-                  onLongPress: onAlbumLongPress == null ? null : () => onAlbumLongPress!(album),
+                child: _SelectableAlbum(
+                  album: album,
+                  selection: selection,
+                  onLongPress: onAlbumLongPress,
                   child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
                 ),
               ),
@@ -648,8 +669,10 @@ class _AlbumList extends ConsumerWidget {
           } else {
             return Padding(
               padding: const EdgeInsets.only(bottom: 8.0),
-              child: GestureDetector(
-                onLongPress: onAlbumLongPress == null ? null : () => onAlbumLongPress!(album),
+              child: _SelectableAlbum(
+                album: album,
+                selection: selection,
+                onLongPress: onAlbumLongPress,
                 child: AlbumTile(album: album, isOwner: isOwner, onAlbumSelected: onAlbumSelected),
               ),
             );
@@ -662,7 +685,15 @@ class _AlbumList extends ConsumerWidget {
 }
 
 class _AlbumGrid extends StatelessWidget {
-  const _AlbumGrid({required this.albums, required this.userId, required this.onAlbumSelected, this.onAlbumLongPress});
+  const _AlbumGrid({
+    required this.albums,
+    required this.userId,
+    required this.onAlbumSelected,
+    this.onAlbumLongPress,
+    this.selection,
+  });
+
+  final AlbumSelection? selection;
 
   final List<RemoteAlbum> albums;
   final String? userId;
@@ -690,8 +721,10 @@ class _AlbumGrid extends StatelessWidget {
         ),
         delegate: SliverChildBuilderDelegate((context, index) {
           final album = albums[index];
-          return GestureDetector(
-            onLongPress: onAlbumLongPress == null ? null : () => onAlbumLongPress!(album),
+          return _SelectableAlbum(
+            album: album,
+            selection: selection,
+            onLongPress: onAlbumLongPress,
             child: _GridAlbumCard(album: album, userId: userId, onAlbumSelected: onAlbumSelected),
           );
         }, childCount: albums.length),
@@ -902,4 +935,153 @@ class CreateAlbumButton extends ConsumerWidget {
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------- Custom fork: album multi-select
+
+/// Album ids picked in the Albums tab. Long-press starts it; dragging after the long-press adds every
+/// album the finger passes over; taps then toggle until the selection is cleared.
+class AlbumSelection extends ChangeNotifier {
+  final Set<String> ids = {};
+
+  bool get active => ids.isNotEmpty;
+
+  void add(String id) {
+    if (ids.add(id)) {
+      notifyListeners();
+    }
+  }
+
+  void toggle(String id) {
+    ids.contains(id) ? ids.remove(id) : ids.add(id);
+    notifyListeners();
+  }
+
+  void clear() {
+    if (ids.isNotEmpty) {
+      ids.clear();
+      notifyListeners();
+    }
+  }
+}
+
+class _SelectableAlbum extends StatelessWidget {
+  const _SelectableAlbum({required this.album, required this.selection, required this.child, this.onLongPress});
+
+  final RemoteAlbum album;
+  final AlbumSelection? selection;
+  final AlbumSelectorCallback? onLongPress;
+  final Widget child;
+
+  /// The album id under a screen point (each card is tagged with MetaData).
+  static String? _albumAt(BuildContext context, Offset global) {
+    final result = HitTestResult();
+    WidgetsBinding.instance.hitTestInView(result, global, View.of(context).viewId);
+    for (final entry in result.path) {
+      final target = entry.target;
+      if (target is RenderMetaData && target.metaData is _AlbumTag) {
+        return (target.metaData as _AlbumTag).id;
+      }
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final selection = this.selection;
+    if (selection == null) {
+      return GestureDetector(onLongPress: onLongPress == null ? null : () => onLongPress!(album), child: child);
+    }
+    return MetaData(
+      metaData: _AlbumTag(album.id),
+      behavior: HitTestBehavior.translucent,
+      child: ListenableBuilder(
+        listenable: selection,
+        builder: (context, child) {
+          final isSelected = selection.ids.contains(album.id);
+          return GestureDetector(
+            key: ValueKey('album_select_${album.id}'),
+            onLongPressStart: (_) => selection.add(album.id),
+            onLongPressMoveUpdate: (details) {
+              final id = _albumAt(context, details.globalPosition);
+              if (id != null) {
+                selection.add(id);
+              }
+            },
+            onTap: selection.active ? () => selection.toggle(album.id) : null,
+            child: Stack(
+              children: [
+                AbsorbPointer(absorbing: selection.active, child: child),
+                if (selection.active)
+                  Positioned(
+                    top: 6,
+                    right: 6,
+                    child: Icon(
+                      isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                      color: isSelected ? context.primaryColor : Colors.white70,
+                      shadows: const [Shadow(blurRadius: 4)],
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+        child: child,
+      ),
+    );
+  }
+}
+
+class _AlbumTag {
+  const _AlbumTag(this.id);
+
+  final String id;
+}
+
+/// "N selected | Move to folder | clear" bar, pinned while albums are selected.
+class _AlbumSelectionBar extends ConsumerWidget {
+  const _AlbumSelectionBar({required this.selection, required this.albums});
+
+  final AlbumSelection selection;
+  final List<RemoteAlbum> albums;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => ListenableBuilder(
+    listenable: selection,
+    builder: (context, _) {
+      if (!selection.active) {
+        return const SliverToBoxAdapter(child: SizedBox.shrink());
+      }
+      return SliverPinnedHeader(
+        child: Material(
+          color: context.colorScheme.surfaceContainerHigh,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              children: [
+                IconButton(
+                  key: const Key('album_selection_clear'),
+                  tooltip: "Clear selection",
+                  icon: const Icon(Icons.close_rounded),
+                  onPressed: selection.clear,
+                ),
+                Expanded(child: Text("${selection.ids.length} selected", style: context.textTheme.titleSmall)),
+                TextButton.icon(
+                  key: const Key('album_selection_move'),
+                  icon: const Icon(Icons.drive_file_move_outline),
+                  label: const Text("Move to folder"),
+                  onPressed: () async {
+                    final picked = albums.where((a) => selection.ids.contains(a.id)).toList();
+                    if (await showMoveAlbumsToFolderSheet(context, ref, picked)) {
+                      selection.clear();
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
+  );
 }
