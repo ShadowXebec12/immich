@@ -23,6 +23,8 @@ enum SettingsKey<T> {
   viewerLoadOriginalVideo<bool>(),
   viewerAutoPlayVideo<bool>(),
   viewerTapToNavigate<bool>(),
+  // Custom fork: viewer gesture -> action pairs
+  viewerGestures<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Network
   networkAutoEndpointSwitching<bool>(),

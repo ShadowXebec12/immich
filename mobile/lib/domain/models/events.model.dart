@@ -24,6 +24,11 @@ class ViewerReloadAssetEvent extends Event {
   const ViewerReloadAssetEvent();
 }
 
+// Custom fork: go to the next photo (after favoriting or labeling one)
+class ViewerAdvanceEvent extends Event {
+  const ViewerAdvanceEvent();
+}
+
 class ViewerStackAssetDeletedEvent extends Event {
   final int stackIndex;
 

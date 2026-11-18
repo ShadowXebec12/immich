@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
+import 'package:immich_mobile/domain/models/events.model.dart';
+import 'package:immich_mobile/domain/utils/event_stream.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/actions/action.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
@@ -54,6 +56,10 @@ class FavoriteAction extends AssetActionBuilder {
     try {
       await assetService.update(assetIds, isFavorite: .some(shouldFavorite));
       toastService.success(message);
+      // Custom fork: favoriting in the viewer moves on to the next photo
+      if (shouldFavorite && source == .viewer) {
+        EventStream.shared.emit(const ViewerAdvanceEvent());
+      }
       clearSelection();
     } catch (error, stack) {
       handleError(error, stack: stack, description: "Failed to update favorite status for assets");

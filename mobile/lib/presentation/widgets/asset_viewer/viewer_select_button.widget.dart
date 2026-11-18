@@ -30,7 +30,9 @@ class _ViewerSelectButtonState extends ConsumerState<ViewerSelectButton> {
       _sub = container.listen<MultiSelectState>(
         multiSelectProvider,
         (_, next) {
-          if (mounted) setState(() => _selected = next.selectedAssets);
+          if (mounted) {
+            setState(() => _selected = next.selectedAssets);
+          }
         },
         fireImmediately: true,
       );

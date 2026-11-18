@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/gestures.dart' show Drag, kTouchSlop;
 import 'package:flutter/material.dart';
@@ -344,7 +345,15 @@ class _AssetPageState extends ConsumerState<AssetPage> {
     );
 
     if (asset.isImage && !isPlayingMotionVideo) {
-      return PhotoView(
+      // Custom fork: two/three-finger tap and long press run the chosen viewer gestures
+      return MultiFingerTapListener(
+        onTap: (fingers) => runViewerGesture(
+          context,
+          ref,
+          fingers == 2 ? ViewerGesture.twoFingerTap : ViewerGesture.threeFingerTap,
+          asset,
+        ),
+        child: PhotoView(
         key: Key(asset.heroTag),
         index: widget.index,
         imageProvider: imageProvider,
@@ -362,12 +371,15 @@ class _AssetPageState extends ConsumerState<AssetPage> {
         onDragEnd: _onDragEnd,
         onDragCancel: _onDragCancel,
         onTapUp: _onTapUp,
-        onLongPressStart: asset.isMotionPhoto ? _onLongPress : null,
+        onLongPressStart: asset.isMotionPhoto
+            ? _onLongPress
+            : (context, details, value) => runViewerGesture(context, ref, ViewerGesture.longPress, asset),
         errorBuilder: (_, _, _) => SizedBox(
           width: size.width,
           height: size.height,
           child: Thumbnail.fromAsset(asset: asset, fit: BoxFit.contain),
         ),
+      ),
       );
     }
 

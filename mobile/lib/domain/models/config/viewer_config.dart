@@ -10,5 +10,7 @@ abstract class ViewerConfig with _$ViewerConfig {
     @Default(false) bool loadOriginalVideo,
     @Default(true) bool autoPlayVideo,
     @Default(false) bool tapToNavigate,
+    // Custom fork: viewer gestures as "gesture=action" (see lib/custom/viewer_gestures.dart)
+    @Default(<String>[]) List<String> gestures,
   }) = _ViewerConfig;
 }

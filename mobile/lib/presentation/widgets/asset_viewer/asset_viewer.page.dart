@@ -223,10 +223,21 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
         _onTimelineReloadEvent();
       case ViewerReloadAssetEvent():
         _onViewerReloadEvent();
+      case ViewerAdvanceEvent():
+        _onViewerAdvanceEvent();
       case final ViewerStackAssetDeletedEvent event:
         unawaited(_onViewerStackAssetDeletedEvent(event));
       default:
     }
+  }
+
+  // Custom fork: next photo after a favorite or label; stays put on the last one
+  void _onViewerAdvanceEvent() {
+    final index = _pageController.page?.round() ?? 0;
+    if (index >= _totalAssets - 1) {
+      return;
+    }
+    unawaited(_pageController.animateToPage(index + 1, duration: Durations.medium1, curve: Curves.easeInOut));
   }
 
   void _onViewerReloadEvent() {

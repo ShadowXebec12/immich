@@ -1,6 +1,7 @@
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/duration_extensions.dart';
@@ -191,6 +192,16 @@ class _ThumbnailTileState extends ConsumerState<ThumbnailTile> {
                     },
                   ),
 
+                // Custom fork: DOpus labels from the PC gallery server
+                if (asset != null && asset.remoteId != null)
+                  AnimatedOpacity(
+                    opacity: _hideIndicators ? 0.0 : 1.0,
+                    duration: Durations.short4,
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: FractionallySizedBox(widthFactor: 0.8, child: GridLabelBadges(asset: asset)),
+                    ),
+                  ),
                 if (asset != null && asset.isFavorite)
                   AnimatedOpacity(
                     duration: Durations.short4,

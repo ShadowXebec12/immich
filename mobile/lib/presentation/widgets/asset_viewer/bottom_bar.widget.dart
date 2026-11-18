@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/actions/action.dart';
@@ -95,6 +96,12 @@ class ViewerBottomBar extends ConsumerWidget {
                         children: [
                           if (asset.isImage) OcrToggleButton(asset: asset),
                           if (asset.isVideo) VideoControls(videoPlayerName: asset.id),
+                          // Custom fork: quick tags + DOpus label sheet
+                          if (!isReadonlyModeEnabled && !isInLockedView && asset.hasRemote)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: ViewerQuickTagBar(asset: asset),
+                            ),
                           if (!isReadonlyModeEnabled)
                             ImmichColorOverride(
                               color: Colors.white,
