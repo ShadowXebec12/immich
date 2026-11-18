@@ -14,6 +14,8 @@ class RemoteAlbumOption extends StatelessWidget {
     this.onToggleAlbumOrder,
     this.onEditAlbum,
     this.onShowOptions,
+    this.onToggleNameSort,
+    this.isNameSort = false,
     this.iconColor,
     this.iconShadows,
   });
@@ -26,6 +28,8 @@ class RemoteAlbumOption extends StatelessWidget {
   final VoidCallback? onToggleAlbumOrder;
   final VoidCallback? onEditAlbum;
   final VoidCallback? onShowOptions;
+  final VoidCallback? onToggleNameSort;
+  final bool isNameSort;
   final Color? iconColor;
   final List<Shadow>? iconShadows;
 
@@ -79,6 +83,18 @@ class RemoteAlbumOption extends StatelessWidget {
           label: context.t.change_display_order,
           iconData: Icons.swap_vert_rounded,
           onPressed: onToggleAlbumOrder,
+          menuItem: true,
+        ),
+      );
+    }
+
+    // Custom fork: sort this album by file name (stored on this phone only)
+    if (onToggleNameSort != null) {
+      menuChildren.add(
+        BaseActionButton(
+          label: isNameSort ? 'Sort by date' : 'Sort by name',
+          iconData: isNameSort ? Icons.calendar_month_outlined : Icons.sort_by_alpha_rounded,
+          onPressed: onToggleNameSort,
           menuItem: true,
         ),
       );

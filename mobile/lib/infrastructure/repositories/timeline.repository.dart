@@ -329,6 +329,69 @@ class TimelineRepository extends DatabaseAccessor<Drift> with $TimelineRepositor
     return query.map((row) => row.readTable(_db.remoteAssetEntity).toDto(localId: row.read(localId))).get();
   }
 
+  // Custom fork: album sorted by file name (flat list, no date groups).
+  // A-Z when the album order is "oldest first", Z-A when "newest first".
+  TimelineQuery remoteAlbumByName(String albumId) => (
+    bucketSource: () => _watchRemoteAlbumByNameCount(albumId),
+    assetSource: (offset, count) => _getRemoteAlbumAssetsByName(albumId, offset: offset, count: count),
+    origin: TimelineOrigin.remoteAlbum,
+  );
+
+  // Same rows as the asset query (trashed photos left out), so the count matches the list
+  Stream<List<Bucket>> _watchRemoteAlbumByNameCount(String albumId) {
+    final countExp = _db.remoteAssetEntity.id.count();
+    final query = _db.remoteAssetEntity.selectOnly()
+      ..addColumns([countExp])
+      ..join([
+        innerJoin(
+          _db.remoteAlbumAssetEntity,
+          _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
+          useColumns: false,
+        ),
+      ])
+      ..where(_db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId));
+    return query
+        .map((row) => row.read(countExp)!)
+        .watchSingle()
+        .map(_generateBuckets)
+        .handleError((error) => const <Bucket>[]);
+  }
+
+  Future<List<BaseAsset>> _getRemoteAlbumAssetsByName(
+    String albumId, {
+    required int offset,
+    required int count,
+  }) async {
+    final albumData = await (_db.remoteAlbumEntity.select()..where((row) => row.id.equals(albumId))).getSingleOrNull();
+    if (albumData == null) {
+      return const <BaseAsset>[];
+    }
+    final mode = albumData.order == AlbumAssetOrder.asc ? OrderingMode.asc : OrderingMode.desc;
+
+    final localId = subqueryExpression<String>(
+      _db.localAssetEntity.selectOnly()
+        ..addColumns([_db.localAssetEntity.id])
+        ..where(_db.localAssetEntity.checksum.equalsExp(_db.remoteAssetEntity.checksum))
+        ..limit(1),
+    );
+
+    final query = _db.remoteAssetEntity.select().addColumns([localId]).join([
+      innerJoin(
+        _db.remoteAlbumAssetEntity,
+        _db.remoteAlbumAssetEntity.assetId.equalsExp(_db.remoteAssetEntity.id),
+        useColumns: false,
+      ),
+    ])..where(_db.remoteAssetEntity.deletedAt.isNull() & _db.remoteAlbumAssetEntity.albumId.equals(albumId));
+
+    query.orderBy([
+      OrderingTerm(expression: _db.remoteAssetEntity.name.collate(Collate.noCase), mode: mode),
+      OrderingTerm(expression: _db.remoteAssetEntity.id, mode: mode),
+    ]);
+    query.limit(count, offset: offset);
+
+    return query.map((row) => row.readTable(_db.remoteAssetEntity).toDto(localId: row.read(localId))).get();
+  }
+
   TimelineQuery fromAssets(List<BaseAsset> assets, TimelineOrigin origin) => (
     bucketSource: () => Stream.value(_generateBuckets(assets.length)),
     assetSource: (offset, count) => Future.value(assets.skip(offset).take(count).toList(growable: false)),

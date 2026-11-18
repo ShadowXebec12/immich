@@ -173,27 +173,70 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
     }
     setState(() => _sharing = true);
 
+    // Same flow as the viewer's share button: a "preparing" dialog with progress while the
+    // file downloads, closed when the share sheet opens or the download fails.
     final cancelCompleter = Completer<void>();
+    final progress = ValueNotifier<double?>(null);
+    final mediaRepository = ref.read(assetMediaRepositoryProvider);
+    final toastService = ref.read(toastServiceProvider);
+    final errorMessage = context.t.scaffold_body_error_occurred;
+    final fileType = ref.read(appConfigProvider).share.fileType;
+    final pageContext = context;
+
     try {
-      final count = await ref
-          .read(assetMediaRepositoryProvider)
-          .shareAssets(
-            [asset],
-            context,
-            fileType: ref.read(appConfigProvider).share.fileType,
-            cancelCompleter: cancelCompleter,
+      await showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        useRootNavigator: false,
+        builder: (dialogContext) {
+          void finish({required bool failed}) {
+            if (cancelCompleter.isCompleted || !dialogContext.mounted) {
+              return;
+            }
+            if (failed) {
+              unawaited(Future.value(toastService.error(errorMessage)));
+            }
+            Navigator.of(dialogContext).pop();
+          }
+
+          unawaited(
+            mediaRepository
+                .shareAssets(
+                  [asset],
+                  pageContext,
+                  fileType: fileType,
+                  cancelCompleter: cancelCompleter,
+                  onAssetDownloadProgress: (value) => progress.value = value,
+                )
+                .then<void>((count) => finish(failed: count == 0), onError: (_) => finish(failed: true)),
           );
-      if (count == 0 && mounted) {
-        ref.read(toastServiceProvider).error(context.t.scaffold_body_error_occurred);
-      }
-    } catch (_) {
-      if (mounted) {
-        ref.read(toastServiceProvider).error(context.t.scaffold_body_error_occurred);
-      }
+
+          return AlertDialog(
+            key: const Key('slideshow_share_preparing'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Text(dialogContext.t.share_dialog_preparing),
+                ),
+                SizedBox(
+                  width: 240,
+                  child: ValueListenableBuilder<double?>(
+                    valueListenable: progress,
+                    builder: (_, value, _) => LinearProgressIndicator(value: value, minHeight: 8),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      );
     } finally {
       if (!cancelCompleter.isCompleted) {
         cancelCompleter.complete();
       }
+      progress.dispose();
       if (mounted) {
         setState(() => _sharing = false);
         if (wasPlaying && _paused) {
@@ -205,8 +248,8 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
 
   Widget _getActionButtons(BuildContext context) {
     final asset = widget.timeline.getAssetSafe(_index);
-    // Only while paused (sharing pauses too), so nothing covers the picture during playback
-    if (asset == null || !_paused) {
+    // Shown with the top bar (one tap on the picture) and while paused, hidden during playback
+    if (asset == null || !(_paused || _showAppBar)) {
       return const SizedBox.shrink();
     }
 

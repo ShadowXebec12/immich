@@ -8,6 +8,7 @@ import 'package:immich_mobile/domain/models/config/backup_config.dart';
 import 'package:immich_mobile/domain/models/config/cleanup_config.dart';
 import 'package:immich_mobile/domain/models/config/feature_message_config.dart';
 import 'package:immich_mobile/domain/models/config/image_config.dart';
+import 'package:immich_mobile/domain/models/config/laptop_sync_config.dart';
 import 'package:immich_mobile/domain/models/config/map_config.dart';
 import 'package:immich_mobile/domain/models/config/network_config.dart';
 import 'package:immich_mobile/domain/models/config/share_config.dart';
@@ -43,6 +44,7 @@ abstract class AppConfig with _$AppConfig {
     @Default(NetworkConfig()) NetworkConfig network,
     @Default(ShareConfig()) ShareConfig share,
     @Default(FeatureMessageConfig()) FeatureMessageConfig featureMessage,
+    @Default(LaptopSyncConfig()) LaptopSyncConfig laptopSync,
   }) = _AppConfig;
 
   T read<T>(SettingsKey<T> key) =>
@@ -68,6 +70,8 @@ abstract class AppConfig with _$AppConfig {
             .albumIsGrid => album.isGrid,
             .albumFolderMap => album.folderMap,
             .albumFolderNames => album.folderNames,
+            .albumRecentIds => album.recentIds,
+            .albumNameSortIds => album.nameSortIds,
             .backupEnabled => backup.enabled,
             .backupUseCellularForVideos => backup.useCellularForVideos,
             .backupUseCellularForPhotos => backup.useCellularForPhotos,
@@ -96,6 +100,8 @@ abstract class AppConfig with _$AppConfig {
             .slideshowLook => slideshow.look,
             .slideshowDirection => slideshow.direction,
             .featureMessageSeenRelease => featureMessage.seenRelease,
+            .laptopSyncServerUrl => laptopSync.serverUrl,
+            .laptopSyncSettingsStamp => laptopSync.settingsStamp,
           })
           as T;
 
@@ -127,6 +133,8 @@ abstract class AppConfig with _$AppConfig {
       .albumIsGrid => copyWith(album: album.copyWith(isGrid: value as bool)),
       .albumFolderMap => copyWith(album: album.copyWith(folderMap: value as Map<String, String>)),
       .albumFolderNames => copyWith(album: album.copyWith(folderNames: value as List<String>)),
+      .albumRecentIds => copyWith(album: album.copyWith(recentIds: value as List<String>)),
+      .albumNameSortIds => copyWith(album: album.copyWith(nameSortIds: value as List<String>)),
       .backupEnabled => copyWith(backup: backup.copyWith(enabled: value as bool)),
       .backupUseCellularForVideos => copyWith(backup: backup.copyWith(useCellularForVideos: value as bool)),
       .backupUseCellularForPhotos => copyWith(backup: backup.copyWith(useCellularForPhotos: value as bool)),
@@ -155,6 +163,8 @@ abstract class AppConfig with _$AppConfig {
       .slideshowLook => copyWith(slideshow: slideshow.copyWith(look: value as SlideshowLook)),
       .slideshowDirection => copyWith(slideshow: slideshow.copyWith(direction: value as SlideshowDirection)),
       .featureMessageSeenRelease => copyWith(featureMessage: featureMessage.copyWith(seenRelease: value as SemVer)),
+      .laptopSyncServerUrl => copyWith(laptopSync: laptopSync.copyWith(serverUrl: value as String)),
+      .laptopSyncSettingsStamp => copyWith(laptopSync: laptopSync.copyWith(settingsStamp: value as String)),
     };
   }
 }

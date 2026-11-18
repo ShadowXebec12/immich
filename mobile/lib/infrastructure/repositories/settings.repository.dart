@@ -1,3 +1,4 @@
+import 'package:collection/collection.dart';
 import 'package:drift/drift.dart';
 import 'package:flutter/foundation.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
@@ -92,4 +93,51 @@ class SettingsRepository extends CachedKeyValueRepository<SettingsKey, AppConfig
   }
 
   Stream<AppConfig> watchConfig() => watchSnapshot();
+
+  // ---- Custom fork: laptop sync works on the raw key -> text rows, so every setting is covered
+  // without listing them (new settings sync automatically).
+
+  /// Every stored (non-default) setting except [exclude], as key name -> encoded text.
+  Future<Map<String, String?>> exportRaw({Set<SettingsKey> exclude = const {}}) async {
+    final skip = exclude.map((key) => key.name).toSet();
+    final rows = await selectable().get();
+    return {
+      for (final row in rows)
+        if (!skip.contains(row.key) && keys.any((key) => key.name == row.key)) row.key: row.value,
+    };
+  }
+
+  /// Replaces every setting except [exclude] with [rows]. Unknown keys and values that do not
+  /// decode are skipped, so data written by a newer or older app version cannot break this one.
+  Future<void> importRaw(Map<String, String?> rows, {Set<SettingsKey> exclude = const {}}) async {
+    final skip = exclude.map((key) => key.name).toSet();
+    final valid = <String, String?>{};
+    for (final entry in rows.entries) {
+      final key = keys.firstWhereOrNull((key) => key.name == entry.key);
+      if (key == null || skip.contains(entry.key)) {
+        continue;
+      }
+      try {
+        if (entry.value != null) {
+          decodeValue(key, entry.value!);
+        }
+        valid[entry.key] = entry.value;
+      } catch (_) {
+        // not readable by this version
+      }
+    }
+
+    final replaceable = keys.map((key) => key.name).where((name) => !skip.contains(name)).toList();
+    await _db.transaction(() async {
+      await (_db.delete(_db.settingsEntity)..where((row) => row.key.isIn(replaceable))).go();
+      for (final entry in valid.entries) {
+        await _db
+            .into(_db.settingsEntity)
+            .insertOnConflictUpdate(
+              SettingsEntityCompanion.insert(key: entry.key, value: .new(entry.value), updatedAt: .new(DateTime.now())),
+            );
+      }
+    });
+    await refresh();
+  }
 }

@@ -38,6 +38,10 @@ enum SettingsKey<T> {
   // Custom fork: local album folders. albumId -> folder name, plus the folder list (keeps empty folders).
   albumFolderMap<Map<String, String>>(codec: MapCodec(PrimitiveCodec.string, PrimitiveCodec.string)),
   albumFolderNames<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  // Custom fork: ids of recently opened albums, newest first
+  albumRecentIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  // Custom fork: ids of albums whose photos are sorted by file name
+  albumNameSortIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Backup
   backupEnabled<bool>(),
@@ -81,6 +85,10 @@ enum SettingsKey<T> {
   slideshowDuration<int>(),
   slideshowLook<SlideshowLook>(codec: EnumCodec(SlideshowLook.values)),
   slideshowDirection<SlideshowDirection>(codec: EnumCodec(SlideshowDirection.values)),
+
+  // Custom fork: laptop data store. Both keys stay on this phone and are never synced.
+  laptopSyncServerUrl<String>(),
+  laptopSyncSettingsStamp<String>(),
 
   // Feature message
   featureMessageSeenRelease<SemVer>(codec: SemVerCodec());

@@ -11,6 +11,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_search_bar.widget.dart';
 import 'package:immich_mobile/presentation/widgets/album/pending_uploads_banner.widget.dart';
+import 'package:immich_mobile/presentation/widgets/album/recent_albums.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/remote_album_bottom_sheet.widget.dart';
 import 'package:immich_mobile/presentation/widgets/remote_album/album_option.widget.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/timeline.widget.dart';
@@ -18,6 +19,7 @@ import 'package:immich_mobile/providers/album/album_search.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/current_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/user.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
@@ -40,6 +42,12 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
   void initState() {
     super.initState();
     _album = widget.album;
+    // Custom fork: remember this album for the Recent albums menu
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(recordRecentAlbum(ref, widget.album.id));
+      }
+    });
   }
 
   Future<void> addAssets(BuildContext context) async {
@@ -107,6 +115,13 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
     await ref.read(remoteAlbumProvider.notifier).toggleAlbumOrder(_album.id);
 
     ref.invalidate(timelineServiceProvider);
+  }
+
+  // Custom fork: per-album sort by file name, stored on this phone
+  Future<void> toggleNameSort() async {
+    final ids = ref.read(appConfigProvider).album.nameSortIds;
+    final next = ids.contains(_album.id) ? ids.where((id) => id != _album.id).toList() : [...ids, _album.id];
+    await ref.read(settingsProvider).write(.albumNameSortIds, next);
   }
 
   Future<void> deleteAlbum(BuildContext context) async {
@@ -198,9 +213,12 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
         timelineServiceProvider.overrideWith((ref) {
           final query = ref.watch(albumSearchQueryProvider(_album.id))?.trim() ?? '';
           final factory = ref.watch(timelineFactoryProvider);
-          final timelineService = query.isEmpty
-              ? factory.remoteAlbum(albumId: _album.id)
-              : factory.remoteAlbumSearch(albumId: _album.id, query: query);
+          final byName = ref.watch(appConfigProvider.select((c) => c.album.nameSortIds.contains(_album.id)));
+          final timelineService = query.isNotEmpty
+              ? factory.remoteAlbumSearch(albumId: _album.id, query: query)
+              : byName
+              ? factory.remoteAlbumByName(albumId: _album.id)
+              : factory.remoteAlbum(albumId: _album.id);
           ref.onDispose(timelineService.dispose);
           return timelineService;
         }),
@@ -228,10 +246,12 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
   Widget _buildTimeline(BuildContext context, {required bool isOwner, required bool isSearching}) {
     // Search results are one flat, undated list (same setup as the search page)
     final hasQuery = ref.watch(albumSearchQueryProvider(_album.id).select((query) => (query ?? '').trim().isNotEmpty));
+    final byName = ref.watch(appConfigProvider.select((c) => c.album.nameSortIds.contains(_album.id)));
+    final flat = hasQuery || byName;
 
     return Timeline(
-      groupBy: hasQuery ? GroupAssetsBy.none : null,
-      snapToMonth: !hasQuery,
+      groupBy: flat ? GroupAssetsBy.none : null,
+      snapToMonth: !flat,
       withScrubber: !hasQuery,
       topSliverWidget: PendingUploadsBanner(albumId: _album.id),
       appBar: isSearching
@@ -247,6 +267,8 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
                 onEditAlbum: () => showEditTitleAndDescription(context),
                 onCreateSharedLink: () => unawaited(context.pushRoute(SharedLinkEditRoute(albumId: _album.id))),
                 onShowOptions: () => context.pushRoute(AlbumOptionsRoute(album: _album)),
+                onToggleNameSort: () => toggleNameSort(),
+                isNameSort: byName,
               ),
               onEditTitle: isOwner ? () => showEditTitleAndDescription(context) : null,
               onActivity: () => showActivity(context),
@@ -415,8 +437,12 @@ class _AlbumKebabMenu extends ConsumerWidget {
   final VoidCallback? onEditAlbum;
   final VoidCallback? onCreateSharedLink;
   final VoidCallback? onShowOptions;
+  final VoidCallback? onToggleNameSort;
+  final bool isNameSort;
 
   const _AlbumKebabMenu({
+    this.onToggleNameSort,
+    this.isNameSort = false,
     required this.album,
     this.onDeleteAlbum,
     this.onAddUsers,
@@ -474,6 +500,8 @@ class _AlbumKebabMenu extends ConsumerWidget {
           onEditAlbum: isOwner ? onEditAlbum : null,
           onCreateSharedLink: isOwner ? onCreateSharedLink : null,
           onShowOptions: onShowOptions,
+          onToggleNameSort: onToggleNameSort,
+          isNameSort: isNameSort,
         );
       },
     );

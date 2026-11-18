@@ -12,5 +12,7 @@ abstract class AlbumConfig with _$AlbumConfig {
     @Default(false) bool isGrid,
     @Default({}) Map<String, String> folderMap,
     @Default([]) List<String> folderNames,
+    @Default([]) List<String> recentIds,
+    @Default([]) List<String> nameSortIds,
   }) = _AlbumConfig;
 }

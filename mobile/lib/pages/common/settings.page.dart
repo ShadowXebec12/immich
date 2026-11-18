@@ -7,6 +7,7 @@ import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/settings/advanced_settings.dart';
 import 'package:immich_mobile/widgets/settings/asset_list_settings/asset_list_settings.dart';
 import 'package:immich_mobile/widgets/settings/asset_viewer_settings/asset_viewer_settings.dart';
+import 'package:immich_mobile/widgets/settings/laptop_sync_settings.dart';
 import 'package:immich_mobile/widgets/settings/backup_settings/backup_settings.dart';
 import 'package:immich_mobile/widgets/settings/beta_sync_settings/sync_status_and_actions.dart';
 import 'package:immich_mobile/widgets/settings/free_up_space_settings.dart';
@@ -26,6 +27,7 @@ enum SettingSection {
   notifications(Icons.notifications_none_rounded),
   preferences(Icons.interests_outlined),
   timeline(Icons.auto_awesome_mosaic_outlined),
+  laptopSync(Icons.laptop_mac_outlined),
   beta(Icons.sync_outlined);
 
   final IconData icon;
@@ -40,6 +42,7 @@ enum SettingSection {
     SettingSection.notifications => t.notifications,
     SettingSection.preferences => t.preferences_settings_title,
     SettingSection.timeline => t.asset_list_settings_title,
+    SettingSection.laptopSync => 'Laptop sync',
     SettingSection.beta => t.sync_status,
   };
 
@@ -53,6 +56,7 @@ enum SettingSection {
     SettingSection.notifications => t.setting_notifications_subtitle,
     SettingSection.preferences => t.preferences_settings_subtitle,
     SettingSection.timeline => t.asset_list_settings_subtitle,
+    SettingSection.laptopSync => 'Keep this app\'s folders, sort orders and settings on your laptop',
     SettingSection.beta => t.sync_status_subtitle,
   };
 
@@ -66,6 +70,7 @@ enum SettingSection {
     SettingSection.notifications => const NotificationSetting(),
     SettingSection.preferences => const PreferenceSetting(),
     SettingSection.timeline => const AssetListSettings(),
+    SettingSection.laptopSync => const LaptopSyncSettings(),
     SettingSection.beta => const SyncStatusAndActions(),
   };
 

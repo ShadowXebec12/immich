@@ -13,6 +13,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/extensions/datetime_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/images/image_provider.dart';
+import 'package:immich_mobile/presentation/widgets/album/recent_albums.widget.dart';
 import 'package:immich_mobile/providers/album/album_search.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/current_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/remote_album.provider.dart';
@@ -90,6 +91,8 @@ class _MesmerizingSliverAppBarState extends ConsumerState<RemoteAlbumSliverAppBa
               onPressed: () => context.maybePop(),
             ),
       actions: [
+        // Custom fork: jump to a recently opened album
+        RecentAlbumsButton(currentAlbumId: currentAlbum.id, color: actionIconColor, shadows: actionIconShadows),
         // Custom fork: search inside this album
         IconButton(
           key: const Key('album_search_button'),

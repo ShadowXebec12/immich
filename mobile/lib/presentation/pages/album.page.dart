@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.dart';
+import 'package:immich_mobile/presentation/widgets/album/recent_albums.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
 import 'package:immich_mobile/widgets/common/immich_sliver_app_bar.dart';
@@ -44,6 +45,7 @@ class _AlbumsPageState extends ConsumerState<AlbumsPage> {
           floating: false,
           pinned: true,
           actions: [
+            const RecentAlbumsButton(),
             IconButton(
               onPressed: () => context.pushRoute(const CreateAlbumRoute()),
               icon: const Icon(Icons.add_rounded),

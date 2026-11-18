@@ -58,6 +58,10 @@ class TimelineFactory {
   TimelineService remoteAlbum({required String albumId}) =>
       TimelineService(_timelineRepository.remoteAlbum(albumId, groupBy));
 
+  // Custom fork: album sorted by file name
+  TimelineService remoteAlbumByName({required String albumId}) =>
+      TimelineService(_timelineRepository.remoteAlbumByName(albumId));
+
   // Custom fork: search inside one album (file name / description)
   TimelineService remoteAlbumSearch({required String albumId, required String query}) =>
       TimelineService(_timelineRepository.remoteAlbumSearch(albumId, query));
