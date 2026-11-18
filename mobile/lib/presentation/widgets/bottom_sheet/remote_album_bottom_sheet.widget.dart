@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/selection_actions.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
@@ -85,6 +86,9 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
         const .new(action: AssetDebugAction(source: .timeline)),
         const .new(action: ShareAction(source: .timeline)),
         const .new(action: CopyNamesAction(source: .timeline)),
+        const .new(action: LabelSheetAction(source: .timeline)),
+        const .new(action: QuickTagAction(source: .timeline)),
+        const .new(action: RateAction(source: .timeline)),
         const .new(action: ShareLinkAction(source: .timeline)),
 
         if (ownsAlbum) ...const [

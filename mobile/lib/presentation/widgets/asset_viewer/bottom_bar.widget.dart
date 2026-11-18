@@ -100,7 +100,10 @@ class ViewerBottomBar extends ConsumerWidget {
                           if (!isReadonlyModeEnabled && !isInLockedView && asset.hasRemote)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 8),
-                              child: ViewerQuickTagBar(asset: asset),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [ViewerStarRow(asset: asset), const SizedBox(height: 6), ViewerQuickTagBar(asset: asset)],
+                              ),
                             ),
                           if (!isReadonlyModeEnabled)
                             ImmichColorOverride(

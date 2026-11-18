@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/selection_actions.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
@@ -80,6 +81,9 @@ class _GeneralBottomSheetState extends ConsumerState<GeneralBottomSheet> {
         .new(action: AssetDebugAction(source: .timeline)),
         .new(action: ShareAction(source: .timeline)),
         .new(action: CopyNamesAction(source: .timeline)),
+        .new(action: LabelSheetAction(source: .timeline)),
+        .new(action: QuickTagAction(source: .timeline)),
+        .new(action: RateAction(source: .timeline)),
         .new(action: ShareLinkAction(source: .timeline)),
         .new(action: DownloadAction(source: .timeline)),
         .new(action: DeleteAction(source: .timeline)),
