@@ -87,7 +87,7 @@ class RecentAlbumsButton extends ConsumerWidget {
       return;
     }
     final route = RemoteAlbumRoute(album: picked);
-    unawaited(currentAlbumId == null ? context.router.push(route) : context.router.replace(route));
+    unawaited(currentAlbumId == null ? context.router.push(route) : context.router.popAndPush(route));
   }
 
   @override
