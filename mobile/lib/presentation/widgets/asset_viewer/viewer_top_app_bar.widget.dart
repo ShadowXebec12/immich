@@ -171,12 +171,24 @@ class _AssetInfoTitle extends ConsumerWidget {
     final dateFormatted = dateTime.formatDate();
     final timeFormatted = dateTime.formatTime(alwaysUse24HourFormat: alwaysUse24HourFormat);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(dateFormatted, style: context.textTheme.labelLarge?.copyWith(color: Colors.white)),
-        Text(timeFormatted, style: context.textTheme.labelMedium?.copyWith(color: Colors.white70)),
-      ],
+    // Custom fork: the extra toolbar buttons (tag, select) leave little room; never wrap the
+    // date one letter per line. Shrink to fit, and hide it when there is no usable room.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 56) {
+          return const SizedBox.shrink();
+        }
+        return FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(dateFormatted, maxLines: 1, softWrap: false, style: context.textTheme.labelLarge?.copyWith(color: Colors.white)),
+              Text(timeFormatted, maxLines: 1, softWrap: false, style: context.textTheme.labelMedium?.copyWith(color: Colors.white70)),
+            ],
+          ),
+        );
+      },
     );
   }
 }

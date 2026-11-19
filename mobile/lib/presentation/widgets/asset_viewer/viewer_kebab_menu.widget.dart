@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
+import 'package:immich_mobile/custom/gen_menu.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
@@ -71,7 +74,25 @@ class ViewerKebabMenu extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: menuChildren,
+              children: [
+                // Custom fork: mix gallery gen buttons + copy prompt parts
+                if (asset.hasRemote) ...[
+                  MenuItemButton(
+                    key: const ValueKey('kebab_generate'),
+                    leadingIcon: const Icon(Icons.auto_awesome),
+                    onPressed: () => unawaited(showGenSheet(context, ref, asset)),
+                    child: const Text("Generate"),
+                  ),
+                  MenuItemButton(
+                    key: const ValueKey('kebab_copy_parts'),
+                    leadingIcon: const Icon(Icons.content_copy),
+                    onPressed: () => unawaited(showGenSheet(context, ref, asset, copyOnly: true)),
+                    child: const Text("Copy prompt parts"),
+                  ),
+                  const Divider(height: 1),
+                ],
+                ...menuChildren,
+              ],
             ),
           ),
         ),
