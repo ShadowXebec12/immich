@@ -1,6 +1,6 @@
 // Custom fork: mix gallery gen buttons + copy prompt parts, from the viewer's ... menu.
-// The 8899 server maps the Immich asset to its PC file (/immich_path), then the same
-// /prompt and /regen routes the mix gallery app uses do the work. No image bytes are sent.
+// Same /prompt and /regen routes as the mix gallery app; like the label calls, the app sends
+// the Immich asset id + filename and the 8899 server finds the PC file. No image bytes are sent.
 import 'dart:async';
 import 'dart:convert';
 
@@ -13,22 +13,11 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
 import 'package:immich_mobile/services/toast.service.dart';
 
-/// Immich asset -> PC path on the gallery server (null when not found / server off).
-Future<String?> pcPathFor(BaseAsset asset) async {
-  try {
-    final uri = Uri.parse('$kGalleryServer/immich_path').replace(
-      queryParameters: {if (asset.remoteId != null) 'immich_id': asset.remoteId, 'n': asset.name},
-    );
-    final res = await http.get(uri).timeout(const Duration(seconds: 15));
-    if (res.statusCode != 200) {
-      return null;
-    }
-    final p = (jsonDecode(utf8.decode(res.bodyBytes)) as Map)['p']?.toString() ?? '';
-    return p.isEmpty ? null : p;
-  } catch (_) {
-    return null;
-  }
-}
+/// How the server finds the PC file (same fields the label calls send).
+Map<String, String> assetRef(BaseAsset asset) => {
+  if (asset.remoteId != null) 'immich_id': asset.remoteId!,
+  'name': asset.name,
+};
 
 /// A gen mode from the mix gallery's Generate menu and the body fields it sends to /regen.
 class GenPreset {
@@ -61,8 +50,8 @@ const kGenPresets = [
   }, usesStrength: true),
 ];
 
-Map<String, Object> genBody(String path, GenPreset preset, double strength) => {
-  'p': path,
+Map<String, Object> genBody(Map<String, String> ref, GenPreset preset, double strength) => {
+  ...ref,
   'pose': '',
   ...preset.fields,
   if (preset.usesStrength) 'strength': strength.toStringAsFixed(2),
@@ -139,32 +128,32 @@ class _GenSheetState extends State<_GenSheet> {
   }
 
   Future<void> _load() async {
-    final p = await pcPathFor(widget.asset);
-    if (!mounted) {
-      return;
-    }
-    if (p == null) {
-      setState(() => _error = "Not found on the PC (or gallery server off)");
-      return;
-    }
-    setState(() => _path = p);
+    final ref = assetRef(widget.asset);
     try {
-      final uri = Uri.parse('$kGalleryServer/prompt').replace(queryParameters: {'p': p});
+      final uri = Uri.parse('$kGalleryServer/prompt').replace(
+        queryParameters: {if (ref['immich_id'] != null) 'immich_id': ref['immich_id'], 'n': ref['name']},
+      );
       final res = await http.get(uri).timeout(const Duration(seconds: 20));
       if (!mounted) {
         return;
       }
-      setState(() => _info = res.statusCode == 200 ? jsonDecode(utf8.decode(res.bodyBytes)) as Map : {});
+      if (res.statusCode != 200) {
+        setState(() => _error = "Not found on the PC");
+        return;
+      }
+      setState(() {
+        _info = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+        _path = 'ok';
+      });
     } catch (_) {
       if (mounted) {
-        setState(() => _info = {});
+        setState(() => _error = "Gallery server not reachable");
       }
     }
   }
 
   Future<void> _gen(GenPreset preset) async {
-    final p = _path;
-    if (p == null || _sending) {
+    if (_path == null || _sending) {
       return;
     }
     setState(() => _sending = true);
@@ -173,7 +162,7 @@ class _GenSheetState extends State<_GenSheet> {
           .post(
             Uri.parse('$kGalleryServer/regen'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode(genBody(p, preset, _strength)),
+            body: jsonEncode(genBody(assetRef(widget.asset), preset, _strength)),
           )
           .timeout(const Duration(seconds: 120));
       final d = res.statusCode == 200 ? jsonDecode(utf8.decode(res.bodyBytes)) as Map : {};
