@@ -572,6 +572,35 @@ Future<void> showGestureSettings(BuildContext context, WidgetRef ref) => showMod
   ),
 );
 
+/// Settings > Preferences > Asset Viewer: viewer gesture picker.
+class ViewerGestureSettings extends ConsumerWidget {
+  const ViewerGestureSettings({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final saved = ref.watch(appConfigProvider.select((c) => c.viewer.gestures));
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const ListTile(title: Text("Viewer gestures", style: TextStyle(fontWeight: FontWeight.w600))),
+        for (final gesture in ViewerGesture.values)
+          ListTile(
+            title: Text(gesture.title),
+            trailing: DropdownButton<ViewerGestureAction>(
+              value: gestureActionFor(saved, gesture),
+              items: [for (final a in ViewerGestureAction.values) DropdownMenuItem(value: a, child: Text(a.title))],
+              onChanged: (a) {
+                if (a != null) {
+                  unawaited(ref.read(settingsProvider).write(.viewerGestures, withGestureAction(saved, gesture, a)));
+                }
+              },
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// DOpus labels drawn on a grid thumbnail (top left, at most 2 + a count).
 class GridLabelBadges extends ConsumerWidget {
   const GridLabelBadges({super.key, required this.asset});
