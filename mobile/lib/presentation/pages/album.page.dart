@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:immich_mobile/custom/album_search_sheet.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_selector.widget.dart';
@@ -45,6 +46,12 @@ class _AlbumsPageState extends ConsumerState<AlbumsPage> {
           floating: false,
           pinned: true,
           actions: [
+            IconButton(
+              key: const Key('album_search_button'),
+              tooltip: "Search albums",
+              icon: const Icon(Icons.manage_search_rounded),
+              onPressed: () => showAlbumSearchSheet(context),
+            ),
             const RecentAlbumsButton(),
             IconButton(
               onPressed: () => context.pushRoute(const CreateAlbumRoute()),

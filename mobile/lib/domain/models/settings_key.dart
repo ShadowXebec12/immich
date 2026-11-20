@@ -46,6 +46,10 @@ enum SettingsKey<T> {
   albumRecentIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
   // Custom fork: ids of albums whose photos are sorted by file name
   albumNameSortIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  // Custom fork: ids of albums pinned to the top of the album search sheet
+  albumPinnedIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  // Custom fork: two-finger swipe up opens the album search sheet
+  albumSwipeSearch<bool>(),
 
   // Backup
   backupEnabled<bool>(),
