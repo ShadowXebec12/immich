@@ -20,6 +20,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_folder_bar.widget.dart';
+import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
 import 'package:immich_mobile/presentation/widgets/album/recent_albums.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
@@ -636,16 +637,48 @@ class _AllStacksPageState extends ConsumerState<AllStacksPage> {
                     ),
                   ),
                 Expanded(
-                  child: ListView.builder(
+                  child: GridView.builder(
+                    padding: const EdgeInsets.all(2),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      mainAxisSpacing: 2,
+                      crossAxisSpacing: 2,
+                      childAspectRatio: 2 / 3,
+                    ),
                     itemCount: shown.length,
                     itemBuilder: (context, i) {
                       final list = shown[i];
-                      return ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.burst_mode_outlined),
-                        title: Text(list.first.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        trailing: Text("${list.length}"),
+                      return GestureDetector(
+                        key: ValueKey('stack_${list.first.stackId}'),
                         onTap: () => unawaited(openAssetsInViewer(context, ref, list)),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Thumbnail.fromAsset(asset: list.first),
+                            Positioned(
+                              right: 4,
+                              top: 4,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.black54,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.burst_mode_outlined, size: 12, color: Colors.white),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      "${list.length}",
+                                      style: const TextStyle(color: Colors.white, fontSize: 11),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
                       );
                     },
                   ),

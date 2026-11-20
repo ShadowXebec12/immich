@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
+import 'package:immich_mobile/custom/gen_menu.dart';
+import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/config/slideshow_config.dart';
 import 'package:immich_mobile/domain/services/timeline.service.dart';
@@ -246,6 +248,61 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
     }
   }
 
+  // Custom fork: pause while a label / rate / copy / gen sheet is open, then carry on if it was playing.
+  Future<void> _holdFor(Future<void> Function(BaseAsset asset) open) async {
+    final asset = widget.timeline.getAssetSafe(_index);
+    if (asset == null) {
+      return;
+    }
+    final wasPlaying = !_paused;
+    if (wasPlaying) {
+      _pause();
+    }
+    try {
+      await open(asset);
+    } finally {
+      if (mounted && wasPlaying && _paused) {
+        _play();
+      }
+    }
+  }
+
+  Future<void> _copyMenu(BaseAsset asset) async {
+    final pick = await showModalBottomSheet<ViewerGestureAction>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.text_snippet_outlined),
+              title: const Text("Copy name"),
+              onTap: () => Navigator.of(context).pop(ViewerGestureAction.copyName),
+            ),
+            ListTile(
+              leading: const Icon(Icons.image_outlined),
+              title: const Text("Copy image"),
+              onTap: () => Navigator.of(context).pop(ViewerGestureAction.copyImage),
+            ),
+            ListTile(
+              leading: const Icon(Icons.notes_rounded),
+              title: const Text("Copy prompt parts"),
+              onTap: () => Navigator.of(context).pop(ViewerGestureAction.none),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (pick == null || !mounted) {
+      return;
+    }
+    if (pick == ViewerGestureAction.none) {
+      await showGenSheet(context, ref, asset, copyOnly: true);
+    } else {
+      await runViewerAction(context, ref, pick, asset);
+    }
+  }
+
   Widget _getActionButtons(BuildContext context) {
     final asset = widget.timeline.getAssetSafe(_index);
     // Shown with the top bar (one tap on the picture) and while paused, hidden during playback
@@ -285,6 +342,28 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
               icon: Icons.ios_share_rounded,
               onPressed: _sharing ? null : _shareCurrent,
             ),
+            if (asset.hasRemote) ...[
+              button(
+                key: const Key('slideshow_label'),
+                icon: Icons.label_outline_rounded,
+                onPressed: () => unawaited(_holdFor((a) => showLabelSheet(context, ref, a))),
+              ),
+              button(
+                key: const Key('slideshow_rate'),
+                icon: Icons.star_outline_rounded,
+                onPressed: () => unawaited(_holdFor((a) => showRateMenu(context, ref, [a]))),
+              ),
+              button(
+                key: const Key('slideshow_copy'),
+                icon: Icons.copy_rounded,
+                onPressed: () => unawaited(_holdFor(_copyMenu)),
+              ),
+              button(
+                key: const Key('slideshow_generate'),
+                icon: Icons.auto_awesome_rounded,
+                onPressed: () => unawaited(_holdFor((a) => showGenSheet(context, ref, a))),
+              ),
+            ],
           ],
         ),
       ),
@@ -507,15 +586,17 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
       PhotoView buildPhotoView(PhotoViewComputedScale initialScale) => PhotoView(
         imageProvider: imageProvider,
         index: index,
-        disableScaleGestures: true,
+        disableScaleGestures: !(_paused && isCurrent),
         gaplessPlayback: true,
         filterQuality: FilterQuality.high,
         initialScale: initialScale,
+        minScale: scale,
+        maxScale: PhotoViewComputedScale.covered * 4,
         controller: PhotoViewController(),
         onTapUp: (_, _, _) => _onTapUp(),
       );
 
-      if (_disableAnimations) {
+      if (_disableAnimations || (_paused && isCurrent)) {
         return buildPhotoView(scale);
       }
 
