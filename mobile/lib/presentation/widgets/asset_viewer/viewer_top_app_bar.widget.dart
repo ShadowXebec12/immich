@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:immich_mobile/custom/route_history.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
@@ -151,6 +152,7 @@ class _AppBarBackButton extends ConsumerWidget {
         elevation: showingDetails ? 4 : 0,
       ),
       onPressed: context.maybePop,
+      onLongPress: () => unawaited(showRouteHistory(context)),
       child: const Icon(Icons.arrow_back_rounded),
     );
   }

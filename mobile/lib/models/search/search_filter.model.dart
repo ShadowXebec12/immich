@@ -134,6 +134,11 @@ abstract class SearchFilter with _$SearchFilter {
     // Custom fork: limit the search to albums. albumMatchAny = in any of them, otherwise in all of them
     @Default([]) List<String> albumIds,
     @Default(false) bool albumMatchAny,
+    // Custom fork: filters answered by the PC gallery server's search index (model, character, label, mix)
+    @Default([]) List<String> galModels,
+    @Default([]) List<String> galChars,
+    @Default([]) List<String> galLabels,
+    @Default([]) List<String> galMixes,
     required Set<Person> people,
     required SearchLocationFilter location,
     required SearchCameraFilter camera,
@@ -164,6 +169,9 @@ abstract class SearchFilter with _$SearchFilter {
         display.isArchive == false &&
         display.isFavorite == false &&
         rating.rating.isNone &&
-        mediaType == AssetType.other;
+        mediaType == AssetType.other &&
+        !hasGallery;
   }
+
+  bool get hasGallery => galModels.isNotEmpty || galChars.isNotEmpty || galLabels.isNotEmpty || galMixes.isNotEmpty;
 }

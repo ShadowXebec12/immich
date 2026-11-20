@@ -211,6 +211,8 @@ class _SliverTimelineState extends ConsumerState<_SliverTimeline> with WidgetsBi
         _scrollToDate(scrollToDateEvent.date);
       case TimelineReloadEvent():
         setState(() {});
+      case final ViewerClosedEvent closed when identical(closed.timeline, ref.read(timelineServiceProvider)):
+        _revealAsset(closed.index);
       default:
         break;
     }
@@ -238,6 +240,33 @@ class _SliverTimelineState extends ConsumerState<_SliverTimeline> with WidgetsBi
       }
     });
     _restoreAssetIndex = null;
+  }
+
+  // Custom fork: after the viewer closes, bring the last viewed photo into view (only when it is off screen)
+  void _revealAsset(int assetIndex) {
+    final segments = ref.read(timelineSegmentProvider).valueOrNull;
+    if (segments == null) {
+      return;
+    }
+    final targetSegment = segments.lastWhereOrNull((segment) => segment.firstAssetIndex <= assetIndex);
+    if (targetSegment == null) {
+      return;
+    }
+    final columnCount = ref.read(timelineArgsProvider).columnCount;
+    final rowIndexInSegment = ((assetIndex - targetSegment.firstAssetIndex) / columnCount).floor();
+    final rowOffset = targetSegment.indexToLayoutOffset(targetSegment.firstIndex + 1 + rowIndexInSegment);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      final position = _scrollController.position;
+      final rowHeight = position.viewportDimension / 6;
+      final visible = rowOffset >= position.pixels && rowOffset + rowHeight <= position.pixels + position.viewportDimension;
+      if (!visible) {
+        final centered = rowOffset - position.viewportDimension / 2 + rowHeight / 2;
+        _scrollController.jumpTo(centered.clamp(0.0, position.maxScrollExtent));
+      }
+    });
   }
 
   void _onMultiSelectionToggled(_, bool isEnabled) {

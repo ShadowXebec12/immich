@@ -90,6 +90,7 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
   late final _preloader = AssetPreloader(timelineService: ref.read(timelineServiceProvider), mounted: () => mounted);
 
   late int _currentPage = widget.initialIndex;
+  late final Object _timelineForClose = ref.read(timelineServiceProvider);
   late int _totalAssets = ref.read(timelineServiceProvider).totalAssets;
 
   StreamSubscription? _reloadSubscription;
@@ -119,6 +120,7 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
     }
 
     _reloadSubscription = EventStream.shared.listen(_onEvent);
+    _timelineForClose; // read now: ref is not usable in dispose
 
     WidgetsBinding.instance.addPostFrameCallback(_onAssetInit);
 
@@ -128,6 +130,7 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
 
   @override
   void dispose() {
+    EventStream.shared.emit(ViewerClosedEvent(_timelineForClose, _currentPage));
     _pageController.dispose();
     _preloader.dispose();
     unawaited(_reloadSubscription?.cancel());

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/custom/gen_menu.dart';
+import 'package:immich_mobile/custom/route_history.dart';
 import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/config/slideshow_config.dart';
@@ -643,6 +644,7 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
               children: [
                 AppBar(
                   backgroundColor: context.scaffoldBackgroundColor,
+                  leading: const HistoryBackButton(),
                   title: Text(context.t.slideshow),
                   actions: [
                     IconButton(

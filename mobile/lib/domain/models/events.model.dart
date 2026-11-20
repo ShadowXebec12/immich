@@ -24,6 +24,14 @@ class ViewerReloadAssetEvent extends Event {
   const ViewerReloadAssetEvent();
 }
 
+// Custom fork: the viewer closed on [index] of [timeline]; the grid showing that timeline scrolls it into view
+class ViewerClosedEvent extends Event {
+  final Object timeline;
+  final int index;
+
+  const ViewerClosedEvent(this.timeline, this.index);
+}
+
 // Custom fork: go to the next photo (after favoriting or labeling one)
 class ViewerAdvanceEvent extends Event {
   const ViewerAdvanceEvent();

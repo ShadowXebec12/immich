@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/timeline.model.dart';
+import 'package:immich_mobile/domain/services/timeline.service.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_search_bar.widget.dart';
@@ -212,9 +213,19 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
       overrides: [
         timelineServiceProvider.overrideWith((ref) {
           final query = ref.watch(albumSearchQueryProvider(_album.id))?.trim() ?? '';
+          final labels = ref.watch(albumSearchLabelsProvider(_album.id));
           final field = ref.watch(albumSearchFieldProvider(_album.id));
           final factory = ref.watch(timelineFactoryProvider);
           final byName = ref.watch(appConfigProvider.select((c) => c.album.nameSortIds.contains(_album.id)));
+          if (labels.isNotEmpty) {
+            // Custom fork: label filter (PC gallery server) + the typed text as a file-name filter
+            final hits = ref.watch(albumLabelAssetsProvider((_album.id, labels.join('')))).valueOrNull ?? const [];
+            final q = query.toLowerCase();
+            final shown = q.isEmpty ? hits : hits.where((a) => a.name.toLowerCase().contains(q)).toList();
+            final service = factory.fromAssets(shown, TimelineOrigin.remoteAlbum);
+            ref.onDispose(service.dispose);
+            return service;
+          }
           final timelineService = query.isNotEmpty
               ? factory.remoteAlbumSearch(albumId: _album.id, query: query, field: field)
               : byName
@@ -246,7 +257,9 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
 
   Widget _buildTimeline(BuildContext context, {required bool isOwner, required bool isSearching}) {
     // Search results are one flat, undated list (same setup as the search page)
-    final hasQuery = ref.watch(albumSearchQueryProvider(_album.id).select((query) => (query ?? '').trim().isNotEmpty));
+    final hasQuery =
+        ref.watch(albumSearchQueryProvider(_album.id).select((query) => (query ?? '').trim().isNotEmpty)) ||
+        ref.watch(albumSearchLabelsProvider(_album.id).select((l) => l.isNotEmpty));
     final byName = ref.watch(appConfigProvider.select((c) => c.album.nameSortIds.contains(_album.id)));
     final flat = hasQuery || byName;
 

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/custom/gen_menu.dart';
+import 'package:immich_mobile/custom/pc_copy.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
@@ -89,6 +90,7 @@ class ViewerKebabMenu extends ConsumerWidget {
                     onPressed: () => unawaited(showGenSheet(context, ref, asset, copyOnly: true)),
                     child: const Text("Copy prompt parts"),
                   ),
+                  ...copyMenuEntries(context, ref, asset),
                   const Divider(height: 1),
                 ],
                 ...menuChildren,

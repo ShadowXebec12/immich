@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:immich_mobile/custom/gallery_search.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
@@ -77,6 +78,7 @@ class SearchPage extends HookConsumerWidget {
     final mediaTypeCurrentFilterWidget = useState<Widget?>(null);
     final ratingCurrentFilterWidget = useState<Widget?>(null);
     final displayOptionCurrentFilterWidget = useState<Widget?>(null);
+    final galleryWidgets = useState<Map<String, Widget?>>({});
 
     final userPreferences = ref.watch(userMetadataPreferencesProvider);
 
@@ -120,6 +122,7 @@ class SearchPage extends HookConsumerWidget {
           mediaTypeCurrentFilterWidget.value = null;
           ratingCurrentFilterWidget.value = null;
           displayOptionCurrentFilterWidget.value = null;
+          galleryWidgets.value = {};
           locationCurrentFilterWidget.value = preFilter.location.city != null
               ? Text(preFilter.location.city!, style: context.textTheme.labelLarge)
               : null;
@@ -174,6 +177,61 @@ class SearchPage extends HookConsumerWidget {
       );
     }
 
+    // Custom fork: Model / Characters / Labels / Mix filters from the PC gallery server.
+    void showGalleryPicker(String kind, String title) {
+      List<String> current() => switch (kind) {
+        'models' => filter.value.galModels,
+        'chars' => filter.value.galChars,
+        'labels' => filter.value.galLabels,
+        _ => filter.value.galMixes,
+      };
+      SearchFilter withValue(List<String> v) => switch (kind) {
+        'models' => filter.value.copyWith(galModels: v),
+        'chars' => filter.value.copyWith(galChars: v),
+        'labels' => filter.value.copyWith(galLabels: v),
+        _ => filter.value.copyWith(galMixes: v),
+      };
+      var picked = current().toSet();
+
+      void handleClear() {
+        galleryWidgets.value = {...galleryWidgets.value, kind: null};
+        search(withValue([]));
+      }
+
+      void handleApply() {
+        final list = kind == 'models' ? [for (final m in kGalleryModels) if (picked.contains(m)) m] : picked.toList();
+        galleryWidgets.value = {
+          ...galleryWidgets.value,
+          kind: list.isEmpty ? null : Text(list.join(', '), style: context.textTheme.labelLarge),
+        };
+        search(withValue(list));
+      }
+
+      unawaited(
+        showFilterBottomSheet(
+          context: context,
+          isScrollControlled: true,
+          child: FractionallySizedBox(
+            heightFactor: kind == 'models' ? 0.45 : 0.8,
+            child: FilterBottomSheetScaffold(
+              title: title,
+              expanded: true,
+              onSearch: handleApply,
+              onClear: handleClear,
+              child: GalleryFacetPicker(
+                load: () async => kind == 'models'
+                    ? [for (final m in kGalleryModels) GalleryFacetItem(m, m, 0)]
+                    : await galleryFacet(kind),
+                initial: picked,
+                onChanged: (v) => picked = v,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ignore: unused_element
     void showPeoplePicker() {
       var people = filter.value.people;
 
@@ -298,6 +356,7 @@ class SearchPage extends HookConsumerWidget {
       );
     }
 
+    // ignore: unused_element
     void showCameraPicker() {
       var camera = filter.value.camera;
 
@@ -715,10 +774,25 @@ class SearchPage extends HookConsumerWidget {
                       currentFilter: albumCurrentFilterWidget.value,
                     ),
                     SearchFilterChip(
+                      key: const Key('gal_chars_chip'),
                       icon: Icons.people_alt_outlined,
-                      onTap: showPeoplePicker,
-                      label: context.t.people,
-                      currentFilter: peopleCurrentFilterWidget.value,
+                      onTap: () => showGalleryPicker('chars', "Characters"),
+                      label: "Characters",
+                      currentFilter: galleryWidgets.value['chars'],
+                    ),
+                    SearchFilterChip(
+                      key: const Key('gal_labels_chip'),
+                      icon: Icons.label_outline,
+                      onTap: () => showGalleryPicker('labels', "Labels"),
+                      label: "Labels",
+                      currentFilter: galleryWidgets.value['labels'],
+                    ),
+                    SearchFilterChip(
+                      key: const Key('gal_mixes_chip'),
+                      icon: Icons.palette_outlined,
+                      onTap: () => showGalleryPicker('mixes', "Style mix"),
+                      label: "Mix",
+                      currentFilter: galleryWidgets.value['mixes'],
                     ),
                     SearchFilterChip(
                       icon: Icons.location_on_outlined,
@@ -734,10 +808,11 @@ class SearchPage extends HookConsumerWidget {
                         currentFilter: tagCurrentFilterWidget.value,
                       ),
                     SearchFilterChip(
-                      icon: Icons.camera_alt_outlined,
-                      onTap: showCameraPicker,
-                      label: context.t.camera,
-                      currentFilter: cameraCurrentFilterWidget.value,
+                      key: const Key('gal_models_chip'),
+                      icon: Icons.memory_outlined,
+                      onTap: () => showGalleryPicker('models', "Model"),
+                      label: "Model",
+                      currentFilter: galleryWidgets.value['models'],
                     ),
                     SearchFilterChip(
                       icon: Icons.date_range_outlined,

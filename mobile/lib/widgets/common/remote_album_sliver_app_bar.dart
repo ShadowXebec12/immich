@@ -1,9 +1,9 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:ui';
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:immich_mobile/custom/route_history.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/events.model.dart';
@@ -82,14 +82,7 @@ class _MesmerizingSliverAppBarState extends ConsumerState<RemoteAlbumSliverAppBa
       elevation: 0,
       leading: isMultiSelectEnabled
           ? const SizedBox.shrink()
-          : IconButton(
-              icon: Icon(
-                Platform.isIOS ? Icons.arrow_back_ios_new_rounded : Icons.arrow_back,
-                color: actionIconColor,
-                shadows: actionIconShadows,
-              ),
-              onPressed: () => context.maybePop(),
-            ),
+          : HistoryBackButton(color: actionIconColor, shadows: actionIconShadows),
       actions: [
         // Custom fork: jump to a recently opened album
         RecentAlbumsButton(currentAlbumId: currentAlbum.id, color: actionIconColor, shadows: actionIconShadows),

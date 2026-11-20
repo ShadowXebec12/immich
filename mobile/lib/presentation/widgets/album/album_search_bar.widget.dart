@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/gallery_search.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.dart';
 import 'package:immich_mobile/providers/album/album_search.provider.dart';
@@ -35,6 +36,7 @@ class _AlbumSearchBarState extends ConsumerState<AlbumSearchBar> {
   void _close() {
     _timer?.cancel();
     ref.read(albumSearchQueryProvider(widget.albumId).notifier).state = null;
+    ref.read(albumSearchLabelsProvider(widget.albumId).notifier).state = const [];
   }
 
   @override
@@ -82,11 +84,76 @@ class _AlbumSearchBarState extends ConsumerState<AlbumSearchBar> {
                   onChanged: _onChanged,
                 ),
               ),
+              _LabelButton(albumId: widget.albumId),
               _FieldPicker(albumId: widget.albumId),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// Custom fork: filter the album by DOpus labels (PC gallery server).
+class _LabelButton extends ConsumerWidget {
+  const _LabelButton({required this.albumId});
+
+  final String albumId;
+
+  Future<void> _pick(BuildContext context, WidgetRef ref) async {
+    var picked = ref.read(albumSearchLabelsProvider(albumId)).toSet();
+    final apply = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.8,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text("Labels (all must match)", style: TextStyle(fontWeight: FontWeight.w600)),
+                ),
+                const Spacer(),
+                TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text("Clear")),
+                TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text("Apply")),
+              ],
+            ),
+            Expanded(
+              child: GalleryFacetPicker(
+                load: () => galleryFacet('labels'),
+                initial: picked,
+                onChanged: (v) => picked = v,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (apply == null) {
+      return;
+    }
+    ref.read(albumSearchLabelsProvider(albumId).notifier).state = apply ? picked.toList() : const [];
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final labels = ref.watch(albumSearchLabelsProvider(albumId));
+    final loading = labels.isNotEmpty &&
+        ref.watch(albumLabelAssetsProvider((albumId, labels.join(''))).select((a) => a.isLoading));
+    return IconButton(
+      key: const Key('album_search_labels'),
+      tooltip: "Filter by labels",
+      onPressed: () => unawaited(_pick(context, ref)),
+      icon: loading
+          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          : Badge(
+              isLabelVisible: labels.isNotEmpty,
+              label: Text("${labels.length}"),
+              child: Icon(Icons.label_outline, color: labels.isNotEmpty ? context.colorScheme.primary : null),
+            ),
     );
   }
 }
