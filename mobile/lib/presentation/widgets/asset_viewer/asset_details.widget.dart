@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/gen_menu.dart';
+import 'package:immich_mobile/custom/prompt_info.dart';
+import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/appears_in_details.widget.dart';
@@ -43,14 +46,41 @@ class AssetDetails extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const DragHandle(),
-            DateTimeDetails(asset: asset, exifInfo: exifInfo),
-            AssetOwnerDetails(asset: asset),
+            // Custom fork (#4): description (with Copy) and the NAI prompt sections first, like the
+            // mix gallery's Prompt sheet; Immich's own details stay below, folded.
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
+              child: Row(
+                children: [
+                  const Expanded(child: Text("Description", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
+                  CopyTextButton(
+                    key: const ValueKey('info_copy_description'),
+                    label: "Description",
+                    text: exifInfo?.description ?? '',
+                    toast: ref.read(toastServiceProvider),
+                    compact: true,
+                  ),
+                ],
+              ),
+            ),
             SheetAssetDescription(asset: asset, exifInfo: exifInfo),
-            PeopleDetails(asset: asset),
-            LocationDetails(asset: asset, exifInfo: exifInfo),
-            TechnicalDetails(asset: asset, exifInfo: exifInfo),
-            RatingDetails(exifInfo: exifInfo),
-            AppearsInDetails(asset: asset),
+            PromptInfoSections(asset: asset),
+            const Divider(height: 1),
+            ExpansionTile(
+              key: const ValueKey('info_immich_details'),
+              title: const Text("Details", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+              subtitle: const Text("Date, people, location, camera, albums", style: TextStyle(fontSize: 12)),
+              expandedCrossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DateTimeDetails(asset: asset, exifInfo: exifInfo),
+                AssetOwnerDetails(asset: asset),
+                PeopleDetails(asset: asset),
+                LocationDetails(asset: asset, exifInfo: exifInfo),
+                TechnicalDetails(asset: asset, exifInfo: exifInfo),
+                RatingDetails(exifInfo: exifInfo),
+                AppearsInDetails(asset: asset),
+              ],
+            ),
             SizedBox(height: context.padding.bottom + 48),
           ],
         ),

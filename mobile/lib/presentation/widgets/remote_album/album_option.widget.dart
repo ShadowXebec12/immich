@@ -18,6 +18,7 @@ class RemoteAlbumOption extends StatelessWidget {
     this.isNameSort = false,
     this.onToggleOffline,
     this.isOffline = false,
+    this.extraItems = const [],
     this.iconColor,
     this.iconShadows,
   });
@@ -34,6 +35,8 @@ class RemoteAlbumOption extends StatelessWidget {
   final bool isNameSort;
   final VoidCallback? onToggleOffline;
   final bool isOffline;
+  // Custom fork (#4): more menu rows (slideshow queue)
+  final List<Widget> extraItems;
   final Color? iconColor;
   final List<Shadow>? iconShadows;
 
@@ -115,6 +118,8 @@ class RemoteAlbumOption extends StatelessWidget {
         ),
       );
     }
+
+    menuChildren.addAll(extraItems);
 
     if (onCreateSharedLink != null) {
       menuChildren.add(

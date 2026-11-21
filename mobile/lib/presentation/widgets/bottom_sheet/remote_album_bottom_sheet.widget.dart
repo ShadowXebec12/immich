@@ -89,6 +89,9 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
         const .new(action: LabelSheetAction(source: .timeline)),
         const .new(action: QuickTagAction(source: .timeline)),
         const .new(action: RateAction(source: .timeline)),
+        const .new(action: ViewSelectedAction(source: .timeline)),
+        const .new(action: GenQueueAction(source: .timeline)),
+        const .new(action: PcMoveAction(source: .timeline)),
         const .new(action: ShareLinkAction(source: .timeline)),
 
         if (ownsAlbum) ...const [

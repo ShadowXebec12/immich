@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:freezed_annotation/freezed_annotation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/domain/models/user.model.dart';
@@ -191,6 +192,7 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
 
   Future<({int added, int failed})> addAssets(String albumId, List<String> assetIds) async {
     final result = await _remoteAlbumService.addAssets(albumId: albumId, assetIds: assetIds);
+    _rememberLastAdded(albumId);
     if (result.added > 0) {
       await _refreshAlbumInState(albumId);
     }
@@ -217,7 +219,17 @@ class RemoteAlbumNotifier extends Notifier<RemoteAlbumState> {
   /// are linked immediately; local-only assets are queued in
   /// [pendingAlbumUploadsProvider] (so the album page can show them with
   /// progress indicators), uploaded, and linked one-by-one as each finishes.
+  /// Custom fork (#4): the album photos were last added to, for the viewer's "Add to last album" gesture.
+  void _rememberLastAdded(String albumId) {
+    try {
+      unawaited(ref.read(settingsProvider).write(.albumLastAddedId, albumId));
+    } catch (_) {
+      // settings not available (tests): nothing to remember
+    }
+  }
+
   Future<int> addAssetsToAlbum(String albumId, Iterable<BaseAsset> assets) async {
+    _rememberLastAdded(albumId);
     final currentUser = ref.read(currentUserProvider);
     if (currentUser == null) {
       throw Exception('User not logged in');

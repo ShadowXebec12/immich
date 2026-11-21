@@ -106,14 +106,39 @@ class _BulkSelectIconButton extends ConsumerWidget {
 
     return isReadonlyModeEnabled
         ? const SizedBox.shrink()
-        : IconButton(
-            onPressed: () {
-              unawaited(ref.read(multiSelectProvider.notifier).toggleBucketSelection(assetOffset, bucket.assetCount));
-              ref.read(hapticFeedbackProvider.notifier).heavyImpact();
-            },
-            icon: isAllSelected
-                ? Icon(Icons.check_circle_rounded, size: 26, color: context.primaryColor)
-                : Icon(Icons.check_circle_outline_rounded, size: 26, color: context.colorScheme.onSurfaceSecondary),
+        // Custom fork (#4): long press = select every photo of this album / timeline
+        : GestureDetector(
+            key: const Key('header_select_long_press'),
+            onLongPress: () => unawaited(_selectAllMenu(context, ref)),
+            child: IconButton(
+              onPressed: () {
+                unawaited(ref.read(multiSelectProvider.notifier).toggleBucketSelection(assetOffset, bucket.assetCount));
+                ref.read(hapticFeedbackProvider.notifier).heavyImpact();
+              },
+              icon: isAllSelected
+                  ? Icon(Icons.check_circle_rounded, size: 26, color: context.primaryColor)
+                  : Icon(Icons.check_circle_outline_rounded, size: 26, color: context.colorScheme.onSurfaceSecondary),
+            ),
           );
+  }
+
+  Future<void> _selectAllMenu(BuildContext context, WidgetRef ref) async {
+    final total = ref.read(timelineServiceProvider).totalAssets;
+    final go = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => SafeArea(
+        child: ListTile(
+          key: const Key('header_select_all'),
+          leading: const Icon(Icons.select_all_rounded),
+          title: Text("Select all $total photos here"),
+          onTap: () => Navigator.of(context).pop(true),
+        ),
+      ),
+    );
+    if (go == true) {
+      await ref.read(multiSelectProvider.notifier).selectBucket(0, total);
+      ref.read(hapticFeedbackProvider.notifier).heavyImpact();
+    }
   }
 }

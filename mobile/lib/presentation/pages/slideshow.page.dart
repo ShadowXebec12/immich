@@ -389,14 +389,51 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
     setState(() {});
   }
 
+  // Custom fork (#4): smart shuffle. The old pick came from the few hundred photos loaded around the
+  // current one, so the same ones kept coming back. Now every photo is dealt once from a shuffled deck
+  // of the whole timeline; a new deck only after all were shown.
+  List<int> _deck = const [];
+  int _deckPos = 0;
+  final _random = Random();
+
+  int? _dealt; // next card already taken from the deck, not shown yet (pause / settings must not skip it)
+
+  int _nextShuffled() {
+    final dealt = _dealt;
+    if (dealt != null) {
+      return dealt;
+    }
+    final total = widget.timeline.totalAssets;
+    if (total <= 1) {
+      return 0;
+    }
+    if (_deck.length != total) {
+      _deck = List<int>.generate(total, (i) => i)..shuffle(_random);
+      _deckPos = 0;
+    }
+    if (_deckPos >= _deck.length) {
+      if (!_config.repeat) {
+        return -1; // every photo was shown: stop like the end of a forward slideshow
+      }
+      _deck = List<int>.generate(total, (i) => i)..shuffle(_random);
+      _deckPos = 0;
+    }
+    var next = _deck[_deckPos++];
+    if (next == _index && _deckPos < _deck.length) {
+      next = _deck[_deckPos++];
+    }
+    _dealt = next;
+    return next;
+  }
+
   void _updateNextIndex() {
     _nextIndex = switch (_config.direction) {
       SlideshowDirection.forward => _index + 1,
       SlideshowDirection.backward => _index - 1,
-      SlideshowDirection.shuffle => widget.timeline.getIndex(widget.timeline.getRandomAsset().heroTag)!,
+      SlideshowDirection.shuffle => _nextShuffled(),
     };
 
-    if (!widget.timeline.hasRange(_nextIndex, 1)) {
+    if (_nextIndex >= 0 && _nextIndex < widget.timeline.totalAssets && !widget.timeline.hasRange(_nextIndex, 1)) {
       unawaited(widget.timeline.preloadAssets(_nextIndex));
     }
   }
@@ -498,6 +535,7 @@ class _SlideshowPageState extends ConsumerState<SlideshowPage> with SingleTicker
 
   void _pageChanged(int page) {
     final asset = widget.timeline.getAssetSafe(page)!;
+    _dealt = null;
 
     setState(() {
       _index = page;

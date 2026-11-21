@@ -5,6 +5,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/custom/gen_menu.dart';
 import 'package:immich_mobile/custom/pc_copy.dart';
+import 'package:immich_mobile/custom/pc_move.dart';
+import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/custom/stack_export.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
@@ -92,6 +94,17 @@ class ViewerKebabMenu extends ConsumerWidget {
                     leadingIcon: const Icon(Icons.auto_awesome),
                     onPressed: () => unawaited(showGenSheet(context, ref, asset)),
                     child: const Text("Generate"),
+                  ),
+                  // #4: queue for one gen job + move on the PC (the selection when there is one, else this photo)
+                  MenuItemButton(
+                    key: const ValueKey('kebab_gen_queue'),
+                    leadingIcon: const Icon(Icons.playlist_add_rounded),
+                    onPressed: () => unawaited(addToGenQueue(ref, labelTargets(ref, asset))),
+                    child: Text("Add to gen queue (${ref.watch(appConfigProvider.select((c) => c.viewer.genQueue.length))})"),
+                  ),
+                  PcMoveMenuEntries(
+                    onMove: (ver, dest, folder) =>
+                        unawaited(movePhotosOnPc(ref, labelTargets(ref, asset), ver, dest, folder)),
                   ),
                   MenuItemButton(
                     key: const ValueKey('kebab_copy_parts'),

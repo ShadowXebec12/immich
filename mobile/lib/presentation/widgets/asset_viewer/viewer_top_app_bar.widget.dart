@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:immich_mobile/custom/label_badges.dart';
 import 'package:immich_mobile/custom/route_history.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/custom/viewer_tools.dart';
@@ -97,7 +98,10 @@ class ViewerTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
             ),
             SafeArea(
               bottom: false,
-              child: SizedBox(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
                 height: preferredSize.height,
                 child: Theme(
                   data: context.themeData.copyWith(iconTheme: const IconThemeData(size: 22, color: Colors.white)),
@@ -124,6 +128,10 @@ class ViewerTopAppBar extends ConsumerWidget implements PreferredSizeWidget {
                         : null,
                   ),
                 ),
+              ),
+                  // Custom fork (#4): this photo's pose / body / style (+ ref, vibe, test style, impaint) labels
+                  if (!showingDetails && asset.hasRemote) ViewerLabelStrip(asset: asset),
+                ],
               ),
             ),
           ],

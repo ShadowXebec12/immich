@@ -353,6 +353,12 @@ class _AssetPageState extends ConsumerState<AssetPage> {
           fingers == 2 ? ViewerGesture.twoFingerTap : ViewerGesture.threeFingerTap,
           asset,
         ),
+        onSwipe: (left) => runViewerGesture(
+          context,
+          ref,
+          left ? ViewerGesture.twoFingerSwipeLeft : ViewerGesture.twoFingerSwipeRight,
+          asset,
+        ),
         child: PhotoView(
         key: Key(asset.heroTag),
         index: widget.index,

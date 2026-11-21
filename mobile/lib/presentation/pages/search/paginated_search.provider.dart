@@ -80,7 +80,8 @@ class PaginatedSearchNotifier extends StateNotifier<SearchState> {
   // other filter the matching assets are paged straight from the local list; otherwise the normal
   // server search runs and its pages are cut down to the matching assets.
   Future<SearchResult?> _galleryPage(SearchFilter filter, int page) async {
-    final assets = await galleryFilterAssets(
+    // #4: only ids come back for the whole result; each page loads just its own assets
+    final ids = await galleryFilterIds(
       _db,
       models: filter.galModels,
       chars: filter.galChars,
@@ -90,13 +91,14 @@ class PaginatedSearchNotifier extends StateNotifier<SearchState> {
     final native = filter.copyWith(galModels: [], galChars: [], galLabels: [], galMixes: []);
     if (native.isEmpty) {
       final start = (page - 1) * _kGalleryPage;
-      if (start >= assets.length) {
+      if (start >= ids.length) {
         return null;
       }
-      final end = start + _kGalleryPage > assets.length ? assets.length : start + _kGalleryPage;
-      return SearchResult(assets: assets.sublist(start, end), nextPage: end < assets.length ? page + 1 : null);
+      final end = start + _kGalleryPage > ids.length ? ids.length : start + _kGalleryPage;
+      final assets = await galleryAssetsByIds(_db, ids.sublist(start, end));
+      return SearchResult(assets: assets, nextPage: end < ids.length ? page + 1 : null);
     }
-    final allowed = {for (final a in assets) a.id};
+    final allowed = ids.toSet();
     var p = page;
     for (var tries = 0; tries < 20; tries++) {
       final r = await _searchService.search(native, p);

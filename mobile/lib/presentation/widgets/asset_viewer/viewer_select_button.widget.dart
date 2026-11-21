@@ -1,6 +1,8 @@
 // Custom fork: select/deselect the current photo from the viewer, like the mix gallery viewer.
 // The viewer runs in its own provider scope, so the grid's selection lives in another container:
 // the grid stores that container in [viewerSelectContainerProvider] before it opens the viewer.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
@@ -45,6 +47,26 @@ class _ViewerSelectButtonState extends ConsumerState<ViewerSelectButton> {
     super.dispose();
   }
 
+  Future<void> _restoreMenu(BuildContext context, ProviderContainer container) async {
+    final last = MultiSelectNotifier.lastCleared;
+    final restore = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => SafeArea(
+        child: ListTile(
+          key: const Key('viewer_restore_selection'),
+          enabled: last.isNotEmpty,
+          leading: const Icon(Icons.restore_rounded),
+          title: Text(last.isEmpty ? "No selection to restore" : "Restore last selection (${last.length})"),
+          onTap: () => Navigator.of(context).pop(true),
+        ),
+      ),
+    );
+    if (restore == true) {
+      container.read(multiSelectProvider.notifier).restore(last);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final container = ref.watch(viewerSelectContainerProvider);
@@ -66,16 +88,21 @@ class _ViewerSelectButtonState extends ConsumerState<ViewerSelectButton> {
           ),
         if (_selected.isNotEmpty)
           Text("${_selected.length}", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-        IconButton(
-          key: const Key('viewer_select'),
-          tooltip: isSelected ? "Deselect" : "Select",
-          onPressed: () => isSelected
-              ? container.read(multiSelectProvider.notifier).deselectAsset(match)
-              : container.read(multiSelectProvider.notifier).selectAsset(widget.asset),
-          icon: Icon(
-            isSelected ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
-            color: isSelected ? Colors.lightBlueAccent : null,
-            size: isSelected ? 28 : null,
+        // #4: long press = Restore last selection
+        GestureDetector(
+          key: const Key('viewer_select_long_press'),
+          onLongPress: () => unawaited(_restoreMenu(context, container)),
+          child: IconButton(
+            key: const Key('viewer_select'),
+            tooltip: isSelected ? "Deselect" : "Select",
+            onPressed: () => isSelected
+                ? container.read(multiSelectProvider.notifier).deselectAsset(match)
+                : container.read(multiSelectProvider.notifier).selectAsset(widget.asset),
+            icon: Icon(
+              isSelected ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
+              color: isSelected ? Colors.lightBlueAccent : null,
+              size: isSelected ? 28 : null,
+            ),
           ),
         ),
       ],

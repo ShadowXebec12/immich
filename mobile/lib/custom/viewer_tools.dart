@@ -14,6 +14,7 @@ import 'package:immich_mobile/domain/models/events.model.dart';
 import 'package:immich_mobile/domain/utils/event_stream.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/viewer_select_button.widget.dart';
 import 'package:immich_mobile/providers/infrastructure/asset.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
 import 'package:immich_mobile/providers/timeline/multiselect.provider.dart';
@@ -27,7 +28,8 @@ enum ViewerGestureAction {
   copyName("Copy file name"),
   copyImage("Copy image"),
   labels("Label sheet"),
-  select("Select");
+  select("Select"),
+  addToLastAlbum("Add to last album");
 
   const ViewerGestureAction(this.title);
 
@@ -37,7 +39,10 @@ enum ViewerGestureAction {
 enum ViewerGesture {
   longPress("Long press", ViewerGestureAction.labels),
   twoFingerTap("Two-finger tap", ViewerGestureAction.favorite),
-  threeFingerTap("Three-finger tap", ViewerGestureAction.copyName);
+  threeFingerTap("Three-finger tap", ViewerGestureAction.copyName),
+  // #4: two fingers swiped sideways together (two-finger swipe up stays the album search sheet)
+  twoFingerSwipeLeft("Two-finger swipe left", ViewerGestureAction.addToLastAlbum),
+  twoFingerSwipeRight("Two-finger swipe right", ViewerGestureAction.none);
 
   const ViewerGesture(this.title, this.defaultAction);
 
@@ -97,6 +102,30 @@ Future<void> runViewerAction(BuildContext context, WidgetRef ref, ViewerGestureA
     case ViewerGestureAction.select:
       final container = ref.read(viewerSelectContainerProvider);
       container?.read(multiSelectProvider.notifier).toggleAssetSelection(asset);
+    case ViewerGestureAction.addToLastAlbum:
+      await addToLastAlbum(ref, asset);
+  }
+}
+
+/// #4: add this photo to the album photos were last added to (any add-to-album in this app).
+Future<void> addToLastAlbum(WidgetRef ref, BaseAsset asset) async {
+  final toast = ref.read(toastServiceProvider);
+  final albumId = ref.read(appConfigProvider).album.lastAddedId;
+  final remoteId = asset.remoteId;
+  if (albumId == null) {
+    toast.error("No last album yet: add a photo to an album first");
+    return;
+  }
+  if (remoteId == null) {
+    toast.error("Not on the server yet");
+    return;
+  }
+  final name = ref.read(remoteAlbumProvider).albums.where((a) => a.id == albumId).firstOrNull?.name ?? "last album";
+  try {
+    final r = await ref.read(remoteAlbumProvider.notifier).addAssets(albumId, [remoteId]);
+    r.added > 0 ? toast.success("Added to $name") : toast.info("Already in $name");
+  } catch (_) {
+    toast.error("Couldn't add to $name");
   }
 }
 
@@ -123,9 +152,12 @@ Future<String?> copyImageToClipboard(BaseAsset asset) async {
 /// Two- and three-finger taps (no recognizer for those in Flutter). A tap = all fingers down and up
 /// again within 350 ms without moving, so pinch-zoom never counts.
 class MultiFingerTapListener extends StatefulWidget {
-  const MultiFingerTapListener({super.key, required this.onTap, required this.child});
+  const MultiFingerTapListener({super.key, required this.onTap, this.onSwipe, required this.child});
 
   final void Function(int fingers) onTap;
+
+  /// #4: two fingers moved sideways together; true = to the left.
+  final void Function(bool left)? onSwipe;
   final Widget child;
 
   @override
@@ -134,6 +166,8 @@ class MultiFingerTapListener extends StatefulWidget {
 
 class _MultiFingerTapListenerState extends State<MultiFingerTapListener> {
   final _down = <int, Offset>{};
+  final _first = <int, Offset>{};
+  final _last = <int, Offset>{};
   int _maxFingers = 0;
   Duration? _start;
   bool _moved = false;
@@ -142,6 +176,31 @@ class _MultiFingerTapListenerState extends State<MultiFingerTapListener> {
     _maxFingers = 0;
     _start = null;
     _moved = false;
+    _first.clear();
+    _last.clear();
+  }
+
+  /// Two fingers, both moved > 80 px the same way sideways, little up/down, finger gap kept (not a pinch).
+  bool? _swipeLeft(Duration end) {
+    final start = _start;
+    if (_maxFingers != 2 || _first.length != 2 || start == null || end - start > const Duration(milliseconds: 800)) {
+      return null;
+    }
+    final ids = _first.keys.toList();
+    final d0 = _last[ids[0]]! - _first[ids[0]]!;
+    final d1 = _last[ids[1]]! - _first[ids[1]]!;
+    final gapStart = (_first[ids[0]]! - _first[ids[1]]!).distance;
+    final gapEnd = (_last[ids[0]]! - _last[ids[1]]!).distance;
+    if (d0.dy.abs() > 70 || d1.dy.abs() > 70 || (gapEnd - gapStart).abs() > 60) {
+      return null;
+    }
+    if (d0.dx < -80 && d1.dx < -80) {
+      return true;
+    }
+    if (d0.dx > 80 && d1.dx > 80) {
+      return false;
+    }
+    return null;
   }
 
   @override
@@ -153,14 +212,19 @@ class _MultiFingerTapListenerState extends State<MultiFingerTapListener> {
         _start = e.timeStamp;
       }
       _down[e.pointer] = e.position;
+      _first[e.pointer] = e.position;
+      _last[e.pointer] = e.position;
       if (_down.length > _maxFingers) {
         _maxFingers = _down.length;
       }
     },
     onPointerMove: (e) {
       final from = _down[e.pointer];
-      if (from != null && (e.position - from).distance > 20) {
-        _moved = true;
+      if (from != null) {
+        _last[e.pointer] = e.position;
+        if ((e.position - from).distance > 20) {
+          _moved = true;
+        }
       }
     },
     onPointerUp: (e) {
@@ -169,6 +233,11 @@ class _MultiFingerTapListenerState extends State<MultiFingerTapListener> {
         final start = _start;
         if (!_moved && _maxFingers >= 2 && start != null && e.timeStamp - start < const Duration(milliseconds: 350)) {
           widget.onTap(_maxFingers);
+        } else if (_moved && widget.onSwipe != null) {
+          final left = _swipeLeft(e.timeStamp);
+          if (left != null) {
+            widget.onSwipe!(left);
+          }
         }
         _reset();
       }
@@ -192,8 +261,9 @@ List<BaseAsset> labelTargets(WidgetRef ref, BaseAsset asset) {
 }
 
 /// #3: drop the grid selection once a batch label / quick tag / rating went through (mix gallery #78).
-void clearSelectionAfterBatch(WidgetRef ref, int count) {
-  if (count < 2) {
+/// #4: [always] = labels and ratings clear it after a single photo too (quick tags keep the old rule).
+void clearSelectionAfterBatch(WidgetRef ref, int count, {bool always = false}) {
+  if (count < 2 && !always) {
     return;
   }
   final container = ref.read(viewerSelectContainerProvider);
@@ -218,7 +288,7 @@ Future<void> applyLabel(WidgetRef ref, BaseAsset asset, String label, {required 
     return;
   }
   toast.success(add ? "Labeled $label" : "Removed $label");
-  clearSelectionAfterBatch(ref, targets.length);
+  clearSelectionAfterBatch(ref, targets.length, always: true);
   if (add && targets.length == 1) {
     EventStream.shared.emit(const ViewerAdvanceEvent());
   }
@@ -454,7 +524,7 @@ Future<void> _saveLabels(WidgetRef ref, List<BaseAsset> targets, List<String> ad
       ..insert(0, l);
   }
   await recordLabelHistory(ref, adds);
-  clearSelectionAfterBatch(ref, targets.length);
+  clearSelectionAfterBatch(ref, targets.length, always: true);
   toast.success(
     [
       if (adds.isNotEmpty) "Added ${adds.join(', ')}",
@@ -510,7 +580,9 @@ Future<void> showQuickTagMenu(BuildContext context, WidgetRef ref, List<BaseAsse
 }
 
 /// Stars: Immich's own rating (shown in Immich) + the mix gallery ratings json on the PC.
-Future<void> rateAssets(WidgetRef ref, List<BaseAsset> targets, int stars) async {
+/// [fromSelection]: the stars went to the grid selection (then it is cleared); the viewer's star row
+/// rates only the photo on screen and leaves the selection alone (#4).
+Future<void> rateAssets(WidgetRef ref, List<BaseAsset> targets, int stars, {bool fromSelection = false}) async {
   final toast = ref.read(toastServiceProvider);
   final service = ref.read(actionServiceProvider);
   final notifier = ref.read(galleryLabelsProvider.notifier);
@@ -529,7 +601,9 @@ Future<void> rateAssets(WidgetRef ref, List<BaseAsset> targets, int stars) async
   }
   if (error == null) {
     toast.success(stars == 0 ? "Rating cleared" : "Rated $stars");
-    clearSelectionAfterBatch(ref, targets.length);
+    if (fromSelection) {
+      clearSelectionAfterBatch(ref, targets.length, always: true);
+    }
   } else {
     toast.error(error);
   }
@@ -564,7 +638,7 @@ Future<void> showRateMenu(BuildContext context, WidgetRef ref, List<BaseAsset> t
     ),
   );
   if (stars != null) {
-    await rateAssets(ref, targets, stars);
+    await rateAssets(ref, targets, stars, fromSelection: true);
   }
 }
 

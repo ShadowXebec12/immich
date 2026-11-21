@@ -8,6 +8,10 @@ import 'package:auto_route/auto_route.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:http/http.dart' as http;
 import 'package:immich_mobile/custom/gallery_labels.dart';
+import 'package:immich_mobile/custom/gallery_search.dart';
+import 'package:immich_mobile/presentation/pages/search/paginated_search.provider.dart';
+import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_viewer.page.dart';
+import 'package:immich_mobile/presentation/widgets/asset_viewer/viewer_select_button.widget.dart';
 import 'package:immich_mobile/custom/stack_export.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/data/db/main/table/remote/asset.dart';
@@ -31,7 +35,13 @@ import 'package:immich_mobile/routing/router.dart';
 bool _sheetOpen = false;
 
 /// Opens [assets] in the photo viewer (swipe through them).
-Future<void> openAssetsInViewer(BuildContext context, WidgetRef ref, List<BaseAsset> assets) async {
+/// [selectContainer]: the grid whose selection the viewer's Select button edits (View selected), else none.
+Future<void> openAssetsInViewer(
+  BuildContext context,
+  WidgetRef ref,
+  List<BaseAsset> assets, {
+  ProviderContainer? selectContainer,
+}) async {
   if (assets.isEmpty) {
     return;
   }
@@ -40,39 +50,11 @@ Future<void> openAssetsInViewer(BuildContext context, WidgetRef ref, List<BaseAs
     unawaited(timeline.dispose());
     return;
   }
+  // #4: reset the viewer state like a grid tap does; without it the viewer kept the last close's
+  // fade-out (see-through page, no bars) and stacks / label results never opened properly
+  AssetViewer.setAsset(ref, assets.first);
+  ref.read(viewerSelectContainerProvider.notifier).state = selectContainer;
   await context.router.push(AssetViewerRoute(initialIndex: 0, timelineService: timeline));
-}
-
-/// Image file names (lowercase) that carry every label in [labels], from the gallery server (all model versions).
-Future<Set<String>> labelFileNames(List<String> labels) async {
-  final names = <String>{};
-  for (final ver in const ['45', 'v3', 'v5']) {
-    final uri = Uri.parse(
-      '$kGalleryServer/search',
-    ).replace(queryParameters: {'label': labels, 'paths': '1', 'flat': '1', if (ver != '45') 'ver': ver});
-    final res = await http.get(uri).timeout(const Duration(seconds: 30));
-    if (res.statusCode != 200) {
-      continue;
-    }
-    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-    for (final p in (body['paths'] as List? ?? const [])) {
-      final full = p.toString();
-      names.add(full.substring(full.lastIndexOf(RegExp(r'[\/]')) + 1).toLowerCase());
-    }
-  }
-  return names;
-}
-
-/// Immich assets whose file name is in [names] (case-insensitive), not trashed.
-Future<List<RemoteAsset>> assetsByNames(Drift db, Set<String> names) async {
-  final list = names.toList();
-  final out = <RemoteAsset>[];
-  for (var i = 0; i < list.length; i += 500) {
-    final chunk = list.sublist(i, i + 500 > list.length ? list.length : i + 500);
-    final q = db.remoteAssetEntity.select()..where((r) => r.name.lower().isIn(chunk) & r.deletedAt.isNull());
-    out.addAll(await q.map((r) => r.toDto()).get());
-  }
-  return out;
 }
 
 /// albumId -> how many of [assetIds] it holds.
@@ -446,8 +428,9 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
   List<PoseBaseRow>? _poses;
   String? _error;
   bool _busy = false;
-  late bool _inAlbum = widget.album != null;
-  List<RemoteAsset> _assets = const [];
+  // #4: All albums (search) is the default; This album stays one tap away
+  bool _inAlbum = false;
+  List<String> _ids = const [];
   Map<String, int> _hits = const {};
   int _search = 0;
 
@@ -483,7 +466,7 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
     final id = ++_search;
     if (_picked.isEmpty || _inAlbum) {
       setState(() {
-        _assets = const [];
+        _ids = const [];
         _hits = const {};
         _busy = false;
       });
@@ -492,12 +475,12 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
     setState(() => _busy = true);
     try {
       final db = ref.read(driftProvider);
-      final names = await labelFileNames(List.of(_picked));
-      final assets = await assetsByNames(db, names);
-      final hits = await albumHits(db, [for (final a in assets) a.id]);
+      // same request + cache as the Search page, so "Show in Search" opens at once
+      final ids = await galleryFilterIds(db, models: const [], chars: const [], labels: List.of(_picked), mixes: const []);
+      final hits = await albumHits(db, ids);
       if (mounted && id == _search) {
         setState(() {
-          _assets = assets;
+          _ids = ids;
           _hits = hits;
           _busy = false;
           _error = null;
@@ -547,6 +530,28 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
     final router = context.router.root;
     Navigator.of(context).pop();
     router.popUntil((r) => r.settings.arguments is RemoteAlbumRouteArgs || r.isFirst);
+  }
+
+  /// #4: All albums: the matching images open as a Search page result (Labels filter set).
+  void _showInSearch() {
+    final router = context.router;
+    final labels = List.of(_picked);
+    Navigator.of(context).pop();
+    ref.read(searchPreFilterProvider.notifier)
+      ..clear()
+      ..setFilter(
+        .new(
+          galLabels: labels,
+          people: {},
+          location: const .new(),
+          camera: const .new(),
+          date: const .new(),
+          display: const .new(isNotInAlbum: false, isArchive: false, isFavorite: false),
+          rating: const .new(),
+          mediaType: .other,
+        ),
+      );
+    unawaited(router.navigate(const SearchRoute()));
   }
 
   Widget _tag((Color, Color) c, String text) => Container(
@@ -707,10 +712,10 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
         if (_picked.isNotEmpty && !_inAlbum && !_busy) ...[
           ListTile(
             key: const Key('label_all_matching'),
-            leading: const Icon(Icons.collections_outlined),
-            title: const Text("All matching images", style: TextStyle(fontWeight: FontWeight.w600)),
-            trailing: Text("${_assets.length}"),
-            onTap: () => unawaited(openAssetsInViewer(context, ref, _assets)),
+            leading: const Icon(Icons.search),
+            title: const Text("Show in Search", style: TextStyle(fontWeight: FontWeight.w600)),
+            trailing: Text("${_ids.length}"),
+            onTap: _showInSearch,
           ),
           for (final (a, n) in hitAlbums)
             ListTile(

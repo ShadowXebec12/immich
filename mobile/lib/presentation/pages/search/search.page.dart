@@ -79,6 +79,8 @@ class SearchPage extends HookConsumerWidget {
     final ratingCurrentFilterWidget = useState<Widget?>(null);
     final displayOptionCurrentFilterWidget = useState<Widget?>(null);
     final galleryWidgets = useState<Map<String, Widget?>>({});
+    // #4: Labels chip + label-group chips (Request type / Male / Body) all feed galLabels (AND)
+    final labelKinds = useState<Map<String, List<String>>>({});
 
     final userPreferences = ref.watch(userMetadataPreferencesProvider);
 
@@ -122,7 +124,11 @@ class SearchPage extends HookConsumerWidget {
           mediaTypeCurrentFilterWidget.value = null;
           ratingCurrentFilterWidget.value = null;
           displayOptionCurrentFilterWidget.value = null;
-          galleryWidgets.value = {};
+          galleryWidgets.value = {
+            if (preFilter.galLabels.isNotEmpty)
+              'labels': Text(preFilter.galLabels.join(', '), style: context.textTheme.labelLarge),
+          };
+          labelKinds.value = {if (preFilter.galLabels.isNotEmpty) 'labels': preFilter.galLabels};
           locationCurrentFilterWidget.value = preFilter.location.city != null
               ? Text(preFilter.location.city!, style: context.textTheme.labelLarge)
               : null;
@@ -178,19 +184,27 @@ class SearchPage extends HookConsumerWidget {
     }
 
     // Custom fork: Model / Characters / Labels / Mix filters from the PC gallery server.
-    void showGalleryPicker(String kind, String title) {
-      List<String> current() => switch (kind) {
-        'models' => filter.value.galModels,
-        'chars' => filter.value.galChars,
-        'labels' => filter.value.galLabels,
-        _ => filter.value.galMixes,
-      };
-      SearchFilter withValue(List<String> v) => switch (kind) {
-        'models' => filter.value.copyWith(galModels: v),
-        'chars' => filter.value.copyWith(galChars: v),
-        'labels' => filter.value.copyWith(galLabels: v),
-        _ => filter.value.copyWith(galMixes: v),
-      };
+    void showGalleryPicker(String kind, String title, {String? group}) {
+      final isLabel = kind == 'labels' || group != null;
+      List<String> current() => isLabel
+          ? labelKinds.value[kind] ?? const []
+          : switch (kind) {
+              'models' => filter.value.galModels,
+              'chars' => filter.value.galChars,
+              _ => filter.value.galMixes,
+            };
+      SearchFilter withValue(List<String> v) {
+        if (isLabel) {
+          final kinds = {...labelKinds.value, kind: v};
+          labelKinds.value = kinds;
+          return filter.value.copyWith(galLabels: {for (final l in kinds.values) ...l}.toList());
+        }
+        return switch (kind) {
+          'models' => filter.value.copyWith(galModels: v),
+          'chars' => filter.value.copyWith(galChars: v),
+          _ => filter.value.copyWith(galMixes: v),
+        };
+      }
       var picked = current().toSet();
 
       void handleClear() {
@@ -221,6 +235,8 @@ class SearchPage extends HookConsumerWidget {
               child: GalleryFacetPicker(
                 load: () async => kind == 'models'
                     ? [for (final m in kGalleryModels) GalleryFacetItem(m, m, 0)]
+                    : group != null
+                    ? await galleryGroupFacet(group)
                     : await galleryFacet(kind),
                 initial: picked,
                 onChanged: (v) => picked = v,
@@ -786,6 +802,27 @@ class SearchPage extends HookConsumerWidget {
                       onTap: () => showGalleryPicker('labels', "Labels"),
                       label: "Labels",
                       currentFilter: galleryWidgets.value['labels'],
+                    ),
+                    SearchFilterChip(
+                      key: const Key('gal_request_chip'),
+                      icon: Icons.assignment_outlined,
+                      onTap: () => showGalleryPicker('grp_request', "Request type", group: 'Model / Request type'),
+                      label: "Request type",
+                      currentFilter: galleryWidgets.value['grp_request'],
+                    ),
+                    SearchFilterChip(
+                      key: const Key('gal_male_chip'),
+                      icon: Icons.man_outlined,
+                      onTap: () => showGalleryPicker('grp_male', "Male type", group: 'Male'),
+                      label: "Male type",
+                      currentFilter: galleryWidgets.value['grp_male'],
+                    ),
+                    SearchFilterChip(
+                      key: const Key('gal_body_chip'),
+                      icon: Icons.accessibility_new_outlined,
+                      onTap: () => showGalleryPicker('grp_body', "Body type", group: 'Body'),
+                      label: "Body type",
+                      currentFilter: galleryWidgets.value['grp_body'],
                     ),
                     SearchFilterChip(
                       key: const Key('gal_mixes_chip'),

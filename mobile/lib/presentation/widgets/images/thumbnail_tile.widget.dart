@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -73,6 +75,17 @@ class _ThumbnailTileState extends ConsumerState<ThumbnailTile> {
 
     if (isSelected) {
       _showSelectionContainer = true;
+    } else if (_showSelectionContainer) {
+      // Custom fork (#4): the blue backing was only dropped by the deselect animation's onEnd, which
+      // never fires when the selection is cleared from the viewer (grid hidden): it stayed blue.
+      // Drop it after the animation time no matter what.
+      unawaited(
+        Future<void>.delayed(Durations.short4 + const Duration(milliseconds: 50), () {
+          if (mounted && _showSelectionContainer && !ref.read(multiSelectProvider).selectedAssets.contains(asset)) {
+            setState(() => _showSelectionContainer = false);
+          }
+        }),
+      );
     }
 
     final uploadProgress = asset is LocalAsset

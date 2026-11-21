@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:immich_mobile/custom/offline_albums.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
+import 'package:immich_mobile/custom/slideshow_queue.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
@@ -528,6 +529,7 @@ class _AlbumKebabMenu extends ConsumerWidget {
           isNameSort: isNameSort,
           onToggleOffline: onToggleOffline,
           isOffline: isOffline,
+          extraItems: slideshowQueueMenuItems(context, ref, album),
         );
       },
     );

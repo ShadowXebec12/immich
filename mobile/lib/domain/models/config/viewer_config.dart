@@ -18,5 +18,8 @@ abstract class ViewerConfig with _$ViewerConfig {
     // Custom fork: last gen from the Generate sheet and grid label badges (see lib/custom/label_badges.dart)
     @Default(<String>[]) List<String> lastGen,
     @Default(<String>[]) List<String> labelBadges,
+    // Custom fork (#4): gen queue ("immichId|name") and the last Generate sheet options (JSON)
+    @Default(<String>[]) List<String> genQueue,
+    String? lastGenOptions,
   }) = _ViewerConfig;
 }

@@ -17,12 +17,12 @@ final albumLabelAssetsProvider = FutureProvider.autoDispose.family<List<RemoteAs
   final (albumId, joined) = key;
   final labels = joined.split('').where((l) => l.isNotEmpty).toList();
   final db = ref.watch(driftProvider);
-  final assets = await galleryFilterAssets(db, models: const [], chars: const [], labels: labels, mixes: const []);
+  final ids = await galleryFilterIds(db, models: const [], chars: const [], labels: labels, mixes: const []);
   final q = db.remoteAlbumAssetEntity.selectOnly()
     ..addColumns([db.remoteAlbumAssetEntity.assetId])
     ..where(db.remoteAlbumAssetEntity.albumId.equals(albumId));
   final inAlbum = {for (final row in await q.get()) row.read(db.remoteAlbumAssetEntity.assetId)!};
-  return assets.where((a) => inAlbum.contains(a.id)).toList();
+  return galleryAssetsByIds(db, ids.where(inAlbum.contains).toList());
 });
 
 /// Which field the in-album search matches (Both / Name / Description).

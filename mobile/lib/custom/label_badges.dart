@@ -404,3 +404,87 @@ class _LabelBadgeSettingsPageState extends ConsumerState<LabelBadgeSettingsPage>
     );
   }
 }
+
+// ---------------------------------------------------------------- viewer strip (#4)
+
+/// label (lowercase) -> its label_groups.txt group (lowercase).
+final labelGroupOfProvider = FutureProvider<Map<String, String>>((ref) async {
+  final groups = await ref.read(galleryLabelsProvider.notifier).groups();
+  return {
+    for (final g in groups)
+      for (final l in g.labels) l.trim().toLowerCase(): g.name.trim().toLowerCase(),
+  };
+});
+
+/// The viewer strip shows only Pose, Body and Style labels plus char ref, vibe transfer, test style
+/// and the impaint needed labels.
+bool viewerStripLabel(String label, String? group) {
+  final l = label.trim().toLowerCase();
+  final g = (group ?? '').trim().toLowerCase();
+  return g == 'pose' ||
+      g == 'body' ||
+      g == 'style' ||
+      l.contains('char ref') ||
+      l.contains('vibe transfer') ||
+      l == 'test style' ||
+      l.contains('impaint needed');
+}
+
+/// Small one-row label chips under the viewer's top bar; scrolls sideways when there are many,
+/// so it never spills over the bar or the photo.
+class ViewerLabelStrip extends ConsumerWidget {
+  const ViewerLabelStrip({super.key, required this.asset});
+
+  final BaseAsset asset;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final labels = ref.watch(galleryLabelsProvider.select((m) => m[labelKey(asset)]));
+    if (labels == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          ref.read(galleryLabelsProvider.notifier).want(asset);
+        }
+      });
+      return const SizedBox.shrink();
+    }
+    final groupOf = ref.watch(labelGroupOfProvider).valueOrNull;
+    if (groupOf == null) {
+      return const SizedBox.shrink();
+    }
+    final tiers = ref.watch(labelTiersProvider).valueOrNull ?? const <String, int>{};
+    final shown = sortLabels(
+      [
+        for (final l in labels)
+          if (viewerStripLabel(l, groupOf[l.trim().toLowerCase()])) l,
+      ],
+      tiers,
+    );
+    if (shown.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      key: const Key('viewer_label_strip'),
+      height: 22,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: shown.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 4),
+        itemBuilder: (context, i) => Center(
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+            child: Text(
+              shown[i],
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 10.5, height: 1.2),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}

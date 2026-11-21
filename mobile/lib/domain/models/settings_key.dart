@@ -30,6 +30,9 @@ enum SettingsKey<T> {
   // Custom fork: last Generate sheet gen [preset title, i2i strength] and grid label badges "label=text=color"
   viewerLastGen<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
   viewerLabelBadges<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  // Custom fork (#4): photos queued for one gen job ("immichId|name") and the full last Generate settings (JSON)
+  viewerGenQueue<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  viewerLastGenOptions<String?>(),
 
   // Network
   networkAutoEndpointSwitching<bool>(),
@@ -55,6 +58,9 @@ enum SettingsKey<T> {
   albumSwipeSearch<bool>(),
   // Custom fork: ids of albums kept offline (thumbnails + previews saved on the phone)
   albumOfflineIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  // Custom fork (#4): album photos were last added to, and albums queued to play as one slideshow
+  albumLastAddedId<String?>(),
+  albumSlideshowQueue<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Backup
   backupEnabled<bool>(),

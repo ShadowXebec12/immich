@@ -3,6 +3,7 @@
 // matched to Immich assets by file name in the app's local database.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:drift/drift.dart' hide Column;
 import 'package:flutter/material.dart';
@@ -45,14 +46,26 @@ List<(String, String?, String?)> _modelQueries(List<String> models) {
 
 String _baseName(String path) => path.substring(path.lastIndexOf(RegExp(r'[\\/]')) + 1).toLowerCase();
 
+/// #4: decoding a big answer (tens of thousands of paths) runs off the UI thread.
+List<String> _namesFromBodies(List<List<int>> bodies) {
+  final names = <String>{};
+  for (final bytes in bodies) {
+    final body = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
+    for (final p in (body['paths'] as List? ?? const [])) {
+      names.add(_baseName(p.toString()));
+    }
+  }
+  return names.toList();
+}
+
 /// Lower-case file names matching every given filter (models are OR'ed, the rest AND).
+/// The model requests run at the same time.
 Future<Set<String>> galleryFileNames({
   List<String> models = const [],
   List<String> chars = const [],
   List<String> labels = const [],
   List<String> mixes = const [],
 }) async {
-  final names = <String>{};
   final responses = await Future.wait([
     for (final (ver, extra, exclude) in _modelQueries(models))
       http
@@ -71,36 +84,56 @@ Future<Set<String>> galleryFileNames({
           )
           .timeout(const Duration(seconds: 60)),
   ]);
-  for (final res in responses) {
-    if (res.statusCode != 200) {
-      continue;
-    }
-    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
-    for (final p in (body['paths'] as List? ?? const [])) {
-      names.add(_baseName(p.toString()));
+  final bodies = [
+    for (final res in responses)
+      if (res.statusCode == 200) res.bodyBytes,
+  ];
+  return (await Isolate.run(() => _namesFromBodies(bodies))).toSet();
+}
+
+/// #4 search speed: ids of the Immich assets (not trashed) whose file name is in [names], newest first.
+/// ONE query: the names go in as a JSON array, so SQLite reads the asset table once instead of once
+/// per 500 names (a 45k-image label used to cost ~90 full table reads on the phone).
+Future<List<String>> galleryIdsByNames(Drift db, Set<String> names) async {
+  if (names.isEmpty) {
+    return const [];
+  }
+  final rows = await db
+      .customSelect(
+        'SELECT id FROM remote_asset_entity WHERE deleted_at IS NULL '
+        'AND lower(name) IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC',
+        variables: [Variable.withString(jsonEncode(names.toList()))],
+        readsFrom: {db.remoteAssetEntity},
+      )
+      .get();
+  return [for (final r in rows) r.read<String>('id')];
+}
+
+/// The assets for [ids], in the same order (one page at a time, so the first page shows at once).
+Future<List<RemoteAsset>> galleryAssetsByIds(Drift db, List<String> ids) async {
+  final byId = <String, RemoteAsset>{};
+  for (var i = 0; i < ids.length; i += 500) {
+    final chunk = ids.sublist(i, i + 500 > ids.length ? ids.length : i + 500);
+    final q = db.remoteAssetEntity.select()..where((r) => r.id.isIn(chunk));
+    for (final a in await q.map((r) => r.toDto()).get()) {
+      byId[a.id] = a;
     }
   }
-  return names;
+  return [
+    for (final id in ids)
+      if (byId[id] != null) byId[id]!,
+  ];
 }
 
 /// Immich assets (not trashed) whose file name is in [names], newest first.
-Future<List<RemoteAsset>> galleryAssets(Drift db, Set<String> names) async {
-  final list = names.toList();
-  final out = <RemoteAsset>[];
-  for (var i = 0; i < list.length; i += 500) {
-    final chunk = list.sublist(i, i + 500 > list.length ? list.length : i + 500);
-    final q = db.remoteAssetEntity.select()..where((r) => r.name.lower().isIn(chunk) & r.deletedAt.isNull());
-    out.addAll(await q.map((r) => r.toDto()).get());
-  }
-  out.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  return out;
-}
+Future<List<RemoteAsset>> galleryAssets(Drift db, Set<String> names) async =>
+    galleryAssetsByIds(db, await galleryIdsByNames(db, names));
 
 String? _cacheKey;
-List<RemoteAsset>? _cacheAssets;
+List<String>? _cacheIds;
 
-/// The Immich assets for a set of gallery filters; the last answer is kept for paging.
-Future<List<RemoteAsset>> galleryFilterAssets(
+/// The Immich asset ids (newest first) for a set of gallery filters; the last answer is kept for paging.
+Future<List<String>> galleryFilterIds(
   Drift db, {
   required List<String> models,
   required List<String> chars,
@@ -108,14 +141,54 @@ Future<List<RemoteAsset>> galleryFilterAssets(
   required List<String> mixes,
 }) async {
   final key = jsonEncode([models, chars, labels, mixes]);
-  if (key == _cacheKey && _cacheAssets != null) {
-    return _cacheAssets!;
+  if (key == _cacheKey && _cacheIds != null) {
+    return _cacheIds!;
   }
   final names = await galleryFileNames(models: models, chars: chars, labels: labels, mixes: mixes);
-  final assets = await galleryAssets(db, names);
+  final ids = await galleryIdsByNames(db, names);
   _cacheKey = key;
-  _cacheAssets = assets;
-  return assets;
+  _cacheIds = ids;
+  return ids;
+}
+
+/// The Immich assets for a set of gallery filters (all of them; prefer [galleryFilterIds] + paging).
+Future<List<RemoteAsset>> galleryFilterAssets(
+  Drift db, {
+  required List<String> models,
+  required List<String> chars,
+  required List<String> labels,
+  required List<String> mixes,
+}) async => galleryAssetsByIds(
+  db,
+  await galleryFilterIds(db, models: models, chars: chars, labels: labels, mixes: mixes),
+);
+
+/// #4: the labels of one /label_groups group (e.g. "Body", "Male", "Model / Request type").
+final Map<String, List<String>> _groupCache = {};
+
+Future<List<String>> galleryGroupLabels(String group) async {
+  final cached = _groupCache[group];
+  if (cached != null) {
+    return cached;
+  }
+  final res = await http.get(Uri.parse('$kGalleryServer/label_groups')).timeout(const Duration(seconds: 30));
+  final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+  for (final g in list) {
+    _groupCache[g['name'].toString()] = [for (final l in (g['labels'] as List? ?? const [])) l.toString()];
+  }
+  return _groupCache[group] ?? const [];
+}
+
+/// Label facet limited to one label group, with the same counts as the Labels chip.
+Future<List<GalleryFacetItem>> galleryGroupFacet(String group) async {
+  final labels = (await galleryGroupLabels(group)).toSet();
+  final all = await galleryFacet('labels');
+  final counted = {for (final i in all) i.key};
+  return [
+    ...all.where((i) => labels.contains(i.key)),
+    for (final l in labels)
+      if (!counted.contains(l)) GalleryFacetItem(l, l, 0),
+  ];
 }
 
 final Map<String, List<GalleryFacetItem>> _facetCache = {};

@@ -71,8 +71,19 @@ class MultiSelectNotifier extends Notifier<MultiSelectState> {
     }
   }
 
+  /// Custom fork (#4): the last non-empty selection that was cleared, for "Restore last selection".
+  static Set<BaseAsset> lastCleared = const {};
+
   void reset() {
+    if (state.selectedAssets.isNotEmpty) {
+      lastCleared = Set.of(state.selectedAssets);
+    }
     state = const MultiSelectState(selectedAssets: {}, lockedSelectionAssets: {}, forceEnable: false);
+  }
+
+  /// Custom fork (#4): add [assets] back to the selection.
+  void restore(Set<BaseAsset> assets) {
+    state = state.copyWith(selectedAssets: {...state.selectedAssets, ...assets});
   }
 
   /// Bucket bulk operations
