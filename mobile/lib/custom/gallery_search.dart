@@ -15,11 +15,15 @@ import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 const kGalleryModels = ['v4.5', 'v4', 'v3', 'v5'];
 
 class GalleryFacetItem {
-  const GalleryFacetItem(this.key, this.title, this.count);
+  const GalleryFacetItem(this.key, this.title, this.count, {String? search}) : _search = search;
 
   final String key;
   final String title;
   final int count;
+  final String? _search;
+
+  /// Lower-case text the picker filter matches: mixes also carry their full artist list.
+  String get search => (_search ?? title).toLowerCase();
 }
 
 /// One /search request per model: (ver, extra label, excluded label). v4 / v4.5 share the '45' index;
@@ -125,7 +129,7 @@ Future<List<GalleryFacetItem>> galleryFacet(String kind) async {
   final List<GalleryFacetItem> items;
   if (kind == 'mixes') {
     final res = await http
-        .get(Uri.parse('$kGalleryServer/genmixes').replace(queryParameters: {'names': '1'}))
+        .get(Uri.parse('$kGalleryServer/genmixes').replace(queryParameters: {'names': '1', 'artists': '1'}))
         .timeout(const Duration(seconds: 30));
     final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     items = [
@@ -134,6 +138,7 @@ Future<List<GalleryFacetItem>> galleryFacet(String kind) async {
           m['id'].toString(),
           (m['name'] ?? '').toString().isEmpty ? m['id'].toString() : "${m['name']} (${m['id']})",
           (m['count'] as num?)?.toInt() ?? 0,
+          search: "${m['name'] ?? ''} ${m['id']} ${m['artists'] ?? ''}",
         ),
     ];
   } else {
@@ -217,10 +222,11 @@ class _GalleryFacetPickerState extends State<GalleryFacetPicker> {
     if (items == null) {
       return const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()));
     }
-    final q = _query.text.trim().toLowerCase();
+    // every typed word must appear (artist names, mix name or id), e.g. "riz scia"
+    final words = _query.text.trim().toLowerCase().split(RegExp(r'[\s,]+')).where((w) => w.isNotEmpty).toList();
     final shown = [
       ...items.where((i) => _selected.contains(i.key)),
-      ...items.where((i) => !_selected.contains(i.key) && (q.isEmpty || i.title.toLowerCase().contains(q))),
+      ...items.where((i) => !_selected.contains(i.key) && words.every(i.search.contains)),
     ];
     return Column(
       children: [

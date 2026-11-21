@@ -8,6 +8,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:drift/drift.dart' hide Column;
 import 'package:http/http.dart' as http;
 import 'package:immich_mobile/custom/gallery_labels.dart';
+import 'package:immich_mobile/custom/stack_export.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/data/db/main/table/remote/asset.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
@@ -22,6 +23,7 @@ import 'package:immich_mobile/domain/models/album/album.model.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_folder_bar.widget.dart';
 import 'package:immich_mobile/presentation/widgets/images/thumbnail.widget.dart';
 import 'package:immich_mobile/presentation/widgets/album/recent_albums.widget.dart';
+import 'package:immich_mobile/providers/album/album_search.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
@@ -124,7 +126,7 @@ Future<void> showAlbumSearchSheet(BuildContext context) async {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (context) => const _AlbumSearchSheet(),
+      builder: (_) => _AlbumSearchSheet(album: currentStackAlbum(context)),
     );
     if (picked != null && context.mounted) {
       unawaited(context.router.push(RemoteAlbumRoute(album: picked)));
@@ -135,7 +137,9 @@ Future<void> showAlbumSearchSheet(BuildContext context) async {
 }
 
 class _AlbumSearchSheet extends ConsumerStatefulWidget {
-  const _AlbumSearchSheet();
+  const _AlbumSearchSheet({this.album});
+
+  final RemoteAlbum? album;
 
   @override
   ConsumerState<_AlbumSearchSheet> createState() => _AlbumSearchSheetState();
@@ -267,7 +271,7 @@ class _AlbumSearchSheetState extends ConsumerState<_AlbumSearchSheet> {
               onSelectionChanged: (v) => setState(() => _labelsMode = v.first),
             ),
           ),
-          if (_labelsMode) const Expanded(child: _LabelsMode()),
+          if (_labelsMode) Expanded(child: _LabelsMode(album: widget.album)),
           if (!_labelsMode)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -378,21 +382,71 @@ class AlbumSwipeSearchSetting extends ConsumerWidget {
   }
 }
 
-/// Labels mode: pick label chips (all must match); shows the albums that hold those images
-/// plus an "All matching images" row.
+/// One pose row of the pose drawer (/pose_base): its full pose labels and framing / secondary sub-labels.
+class PoseBaseRow {
+  const PoseBaseRow(this.tag, this.count, this.combos, this.subs);
+
+  final String tag;
+  final int count;
+  final List<(String, int)> combos;
+  final List<(String, String, int)> subs; // label, group (framing | secondary), count
+
+  static PoseBaseRow fromJson(Map<String, dynamic> j) => PoseBaseRow(
+    j['tag'].toString(),
+    (j['count'] as num?)?.toInt() ?? 0,
+    [for (final c in (j['combos'] as List? ?? const [])) (c['label'].toString(), (c['count'] as num?)?.toInt() ?? 0)],
+    [
+      for (final c in (j['subs'] as List? ?? const []))
+        (c['label'].toString(), c['group'].toString(), (c['count'] as num?)?.toInt() ?? 0),
+    ],
+  );
+}
+
+Future<List<PoseBaseRow>> loadPoseBase() async {
+  final res = await http
+      .get(Uri.parse('$kGalleryServer/pose_base').replace(queryParameters: {'scope': 'all'}))
+      .timeout(const Duration(seconds: 30));
+  final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
+  return [for (final j in list) PoseBaseRow.fromJson(j as Map<String, dynamic>)];
+}
+
+/// The nearest album page in the navigation stack (the album the sheet was opened from), if any.
+RemoteAlbum? currentStackAlbum(BuildContext context) {
+  final pages = context.router.root.stack;
+  for (var i = pages.length - 1; i >= 0; i--) {
+    final args = pages[i].routeData.args;
+    if (args is RemoteAlbumRouteArgs) {
+      return args.album;
+    }
+  }
+  return null;
+}
+
+/// Labels mode (#3): the mix gallery's pose drawer (tick = add, row = only this, chevron = full pose
+/// labels + framing / secondary sub-rows), the other label groups as chips, and a This album /
+/// All albums switch. This album = the album's own label filter; All albums = matching albums + images.
 class _LabelsMode extends ConsumerStatefulWidget {
-  const _LabelsMode();
+  const _LabelsMode({this.album});
+
+  final RemoteAlbum? album;
 
   @override
   ConsumerState<_LabelsMode> createState() => _LabelsModeState();
 }
 
 class _LabelsModeState extends ConsumerState<_LabelsMode> {
+  static const _framing = (Color(0xFF084F40), Color(0xFF9EE0CC));
+  static const _secondary = (Color(0xFF3D338A), Color(0xFFCFCCF5));
+  static const _poseChip = (Color(0xFF0F3D7A), Color(0xFFB3D6FF));
+
   final _filter = TextEditingController();
   final List<String> _picked = [];
+  final Set<String> _open = {};
   List<LabelGroup>? _groups;
+  List<PoseBaseRow>? _poses;
   String? _error;
   bool _busy = false;
+  late bool _inAlbum = widget.album != null;
   List<RemoteAsset> _assets = const [];
   Map<String, int> _hits = const {};
   int _search = 0;
@@ -400,7 +454,7 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
   @override
   void initState() {
     super.initState();
-    unawaited(_loadGroups());
+    unawaited(_load());
   }
 
   @override
@@ -409,11 +463,14 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
     super.dispose();
   }
 
-  Future<void> _loadGroups() async {
+  Future<void> _load() async {
     try {
-      final g = await ref.read(galleryLabelsProvider.notifier).groups();
+      final results = await Future.wait<Object>([ref.read(galleryLabelsProvider.notifier).groups(), loadPoseBase()]);
       if (mounted) {
-        setState(() => _groups = g);
+        setState(() {
+          _groups = results[0] as List<LabelGroup>;
+          _poses = results[1] as List<PoseBaseRow>;
+        });
       }
     } catch (_) {
       if (mounted) {
@@ -424,7 +481,7 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
 
   Future<void> _run() async {
     final id = ++_search;
-    if (_picked.isEmpty) {
+    if (_picked.isEmpty || _inAlbum) {
       setState(() {
         _assets = const [];
         _hits = const {};
@@ -456,9 +513,128 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
     }
   }
 
-  void _toggle(String label) {
-    setState(() => _picked.contains(label) ? _picked.remove(label) : _picked.add(label));
+  void _set(List<String> labels) {
+    setState(() {
+      _picked
+        ..clear()
+        ..addAll(labels);
+    });
     unawaited(_run());
+  }
+
+  /// tick: add / remove one label
+  void _toggle(String label) =>
+      _set(_picked.contains(label) ? (List.of(_picked)..remove(label)) : [..._picked, label]);
+
+  /// row tap: only this label (tap the sole pick again to clear)
+  void _only(String label) => _set(_picked.length == 1 && _picked.first == label ? const [] : [label]);
+
+  /// sub-row tap: this pose AND that framing / secondary label
+  void _poseSub(String pose, String sub) {
+    final same = _picked.length == 2 && _picked[0] == pose && _picked[1] == sub;
+    _set(same ? [pose] : [pose, sub]);
+  }
+
+  /// This album: hand the labels to the album's own filter and go back to the album.
+  void _applyToAlbum() {
+    final album = widget.album;
+    if (album == null || _picked.isEmpty) {
+      return;
+    }
+    ref.read(albumSearchLabelsProvider(album.id).notifier).state = List.of(_picked);
+    final query = ref.read(albumSearchQueryProvider(album.id).notifier);
+    query.state ??= '';
+    final router = context.router.root;
+    Navigator.of(context).pop();
+    router.popUntil((r) => r.settings.arguments is RemoteAlbumRouteArgs || r.isFirst);
+  }
+
+  Widget _tag((Color, Color) c, String text) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+    decoration: BoxDecoration(color: c.$1, borderRadius: BorderRadius.circular(10)),
+    child: Text(text, style: TextStyle(color: c.$2, fontSize: 11, fontWeight: FontWeight.w600)),
+  );
+
+  List<Widget> _poseRows(String f) {
+    final rows = <Widget>[];
+    for (final p in _poses ?? const <PoseBaseRow>[]) {
+      final combos = f.isEmpty ? p.combos : p.combos.where((c) => c.$1.toLowerCase().contains(f)).toList();
+      if (f.isNotEmpty && !p.tag.toLowerCase().contains(f) && combos.isEmpty) {
+        continue;
+      }
+      final open = _open.contains(p.tag) || (f.isNotEmpty && combos.isNotEmpty);
+      final on = _picked.contains(p.tag);
+      rows.add(
+        ListTile(
+          key: ValueKey('drawer_pose_${p.tag}'),
+          dense: true,
+          selected: on && _picked.length == 1,
+          leading: IconButton(
+            icon: Icon(on ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded),
+            onPressed: () => _toggle(p.tag),
+          ),
+          title: Text(p.tag),
+          subtitle: Text("${p.count}"),
+          trailing: IconButton(
+            icon: Icon(open ? Icons.expand_more_rounded : Icons.chevron_right_rounded),
+            onPressed: p.combos.isEmpty && p.subs.isEmpty
+                ? null
+                : () => setState(() => _open.contains(p.tag) ? _open.remove(p.tag) : _open.add(p.tag)),
+          ),
+          onTap: () => _only(p.tag),
+        ),
+      );
+      if (!open) {
+        continue;
+      }
+      for (final (label, count) in combos) {
+        final comboOn = _picked.contains(label);
+        rows.add(
+          ListTile(
+            key: ValueKey('drawer_combo_$label'),
+            dense: true,
+            contentPadding: const EdgeInsets.only(left: 40, right: 16),
+            selected: comboOn && _picked.length == 1,
+            leading: IconButton(
+              icon: Icon(comboOn ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded, size: 20),
+              onPressed: () => _toggle(label),
+            ),
+            title: Row(
+              children: [
+                _tag(_poseChip, "pose"),
+                const SizedBox(width: 8),
+                Expanded(child: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+            trailing: Text("$count"),
+            onTap: () => _only(label),
+          ),
+        );
+      }
+      if (_open.contains(p.tag)) {
+        for (final (label, group, count) in p.subs) {
+          final subOn = _picked.length == 2 && _picked[0] == p.tag && _picked[1] == label;
+          rows.add(
+            ListTile(
+              key: ValueKey('drawer_sub_${p.tag}_$label'),
+              dense: true,
+              contentPadding: const EdgeInsets.only(left: 56, right: 16),
+              selected: subOn,
+              title: Row(
+                children: [
+                  _tag(group == 'framing' ? _framing : _secondary, group == 'framing' ? "framing" : "secondary"),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                ],
+              ),
+              trailing: Text("$count"),
+              onTap: () => _poseSub(p.tag, label),
+            ),
+          );
+        }
+      }
+    }
+    return rows;
   }
 
   @override
@@ -470,9 +646,30 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
       for (final e in _hits.entries)
         if (albums[e.key] != null) (albums[e.key]!, e.value),
     ]..sort((a, b) => b.$2.compareTo(a.$2));
+    final album = widget.album;
 
     return ListView(
       children: [
+        if (album != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+            child: SegmentedButton<bool>(
+              key: const Key('label_scope_toggle'),
+              segments: [
+                ButtonSegment(
+                  value: true,
+                  label: Text(album.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  icon: const Icon(Icons.photo_album_outlined),
+                ),
+                const ButtonSegment(value: false, label: Text("All albums"), icon: Icon(Icons.public)),
+              ],
+              selected: {_inAlbum},
+              onSelectionChanged: (v) {
+                setState(() => _inAlbum = v.first);
+                unawaited(_run());
+              },
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
           child: TextField(
@@ -499,7 +696,15 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
           ),
         if (_error != null) ListTile(title: Text(_error!)),
         if (_busy) const LinearProgressIndicator(),
-        if (_picked.isNotEmpty && !_busy) ...[
+        if (_picked.isNotEmpty && _inAlbum && album != null)
+          ListTile(
+            key: const Key('label_apply_album'),
+            leading: const Icon(Icons.filter_alt_outlined),
+            title: Text("Show in ${album.name}", style: const TextStyle(fontWeight: FontWeight.w600)),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _applyToAlbum,
+          ),
+        if (_picked.isNotEmpty && !_inAlbum && !_busy) ...[
           ListTile(
             key: const Key('label_all_matching'),
             leading: const Icon(Icons.collections_outlined),
@@ -507,27 +712,31 @@ class _LabelsModeState extends ConsumerState<_LabelsMode> {
             trailing: Text("${_assets.length}"),
             onTap: () => unawaited(openAssetsInViewer(context, ref, _assets)),
           ),
-          for (final (album, n) in hitAlbums)
+          for (final (a, n) in hitAlbums)
             ListTile(
               dense: true,
               leading: const Icon(Icons.photo_album_outlined),
-              title: Text(album.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+              title: Text(a.name, maxLines: 2, overflow: TextOverflow.ellipsis),
               trailing: Text("$n"),
               onTap: () {
-                unawaited(recordRecentAlbum(ref, album.id));
-                Navigator.of(context).pop(album);
+                unawaited(recordRecentAlbum(ref, a.id));
+                Navigator.of(context).pop(a);
               },
             ),
-          const Divider(),
         ],
-        if (groups == null && _error == null)
+        const Divider(),
+        if ((groups == null || _poses == null) && _error == null)
           const Padding(
             padding: EdgeInsets.all(16),
             child: Center(child: CircularProgressIndicator()),
           ),
+        if (_poses != null) ...[
+          const ListTile(dense: true, title: Text("Poses", style: TextStyle(fontWeight: FontWeight.w600))),
+          ..._poseRows(f),
+        ],
         if (groups != null)
           for (final g in groups)
-            if (g.labels.any((l) => f.isEmpty || l.toLowerCase().contains(f))) ...[
+            if (g.name.toLowerCase() != 'pose' && g.labels.any((l) => f.isEmpty || l.toLowerCase().contains(f))) ...[
               ListTile(
                 dense: true,
                 title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
@@ -651,6 +860,7 @@ class _AllStacksPageState extends ConsumerState<AllStacksPage> {
                       return GestureDetector(
                         key: ValueKey('stack_${list.first.stackId}'),
                         onTap: () => unawaited(openAssetsInViewer(context, ref, list)),
+                        onLongPress: () => unawaited(showStackExportSheet(context, ref, list)),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [

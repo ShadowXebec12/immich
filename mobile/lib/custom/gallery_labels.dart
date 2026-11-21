@@ -44,7 +44,7 @@ Map<String, dynamic> _item(BaseAsset asset) => {
 /// filename (lower) -> labels. Filled on demand for grid tiles and the viewer.
 class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
   final _requested = <String>{};
-  final _pending = <String, String>{};
+  final _pending = <String, Map<String, dynamic>>{};
   Timer? _timer;
   List<LabelGroup>? _groups;
 
@@ -64,13 +64,14 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
       return;
     }
     _requested.add(key);
-    _pending[key] = asset.name;
+    _pending[key] = _item(asset);
     _timer ??= Timer(const Duration(milliseconds: 200), _flush);
   }
 
   Future<void> _flush() async {
     _timer = null;
-    final batch = _pending.values.take(400).toList();
+    final items = _pending.values.take(400).toList();
+    final batch = [for (final it in items) it['name'].toString()];
     for (final name in batch) {
       _pending.remove(name.trim().toLowerCase());
     }
@@ -82,9 +83,9 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
           .post(
             Uri.parse('$kGalleryServer/imglabels_batch'),
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'paths': batch}),
+            body: jsonEncode({'paths': batch, 'items': items, 'qt': 1}),
           )
-          .timeout(const Duration(seconds: 15));
+          .timeout(const Duration(seconds: 30));
       if (res.statusCode != 200) {
         return;
       }
@@ -94,6 +95,14 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
         next[entry.key.toString().trim().toLowerCase()] = [for (final l in (entry.value as List? ?? [])) l.toString()];
       }
       state = next;
+      // quick-tag lists (bad / average / no_name ...) for the grid badges; found by Immich id on the PC
+      final qt = (jsonDecode(utf8.decode(res.bodyBytes))['qt'] as Map?) ?? {};
+      final qtNext = {...ref.read(galleryQuickTagsProvider)};
+      for (final name in batch) {
+        final key = name.trim().toLowerCase();
+        qtNext[key] = {for (final l in (qt[key] as List? ?? const [])) l.toString()};
+      }
+      ref.read(galleryQuickTagsProvider.notifier).state = qtNext;
     } catch (_) {
       // PC server off: no badges, nothing else breaks. Let these be asked again later.
       for (final name in batch) {
@@ -278,6 +287,12 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
         final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
         return (body['err'] ?? 'Quick tag failed (${res.statusCode})').toString();
       }
+      final key = labelKey(asset);
+      final qt = {...ref.read(galleryQuickTagsProvider)};
+      final cur = {...?qt[key]};
+      add ? cur.add(list) : cur.remove(list);
+      qt[key] = cur;
+      ref.read(galleryQuickTagsProvider.notifier).state = qt;
       return null;
     } catch (_) {
       return 'PC server not reachable';
@@ -288,3 +303,6 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
 final galleryLabelsProvider = NotifierProvider<GalleryLabelsNotifier, Map<String, List<String>>>(
   GalleryLabelsNotifier.new,
 );
+
+/// filename (lower) -> quick-tag list keys it is in (bad, average, no_name, ...), for grid badges.
+final galleryQuickTagsProvider = StateProvider<Map<String, Set<String>>>((ref) => const {});

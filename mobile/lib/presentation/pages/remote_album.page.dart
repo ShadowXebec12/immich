@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:immich_mobile/custom/offline_albums.dart';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -47,6 +48,8 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(recordRecentAlbum(ref, widget.album.id));
+        // offline album: save photos added since the last save (skips ones already saved)
+        unawaited(refreshAlbumOffline(ref, widget.album.id));
       }
     });
   }
@@ -241,6 +244,7 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
         child: Column(
           children: [
             if (isSearching) AlbumSearchBar(albumId: _album.id),
+            OfflineProgressBar(albumId: _album.id),
             Expanded(
               key: const ValueKey('album_timeline'),
               child: MediaQuery.removePadding(
@@ -283,6 +287,8 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
                 onShowOptions: () => context.pushRoute(AlbumOptionsRoute(album: _album)),
                 onToggleNameSort: () => toggleNameSort(),
                 isNameSort: byName,
+                onToggleOffline: () => unawaited(toggleAlbumOffline(ref, _album.id, _album.name)),
+                isOffline: ref.watch(appConfigProvider.select((c) => c.album.offlineIds.contains(_album.id))),
               ),
               onEditTitle: isOwner ? () => showEditTitleAndDescription(context) : null,
               onActivity: () => showActivity(context),
@@ -453,10 +459,14 @@ class _AlbumKebabMenu extends ConsumerWidget {
   final VoidCallback? onShowOptions;
   final VoidCallback? onToggleNameSort;
   final bool isNameSort;
+  final VoidCallback? onToggleOffline;
+  final bool isOffline;
 
   const _AlbumKebabMenu({
     this.onToggleNameSort,
     this.isNameSort = false,
+    this.onToggleOffline,
+    this.isOffline = false,
     required this.album,
     this.onDeleteAlbum,
     this.onAddUsers,
@@ -516,6 +526,8 @@ class _AlbumKebabMenu extends ConsumerWidget {
           onShowOptions: onShowOptions,
           onToggleNameSort: onToggleNameSort,
           isNameSort: isNameSort,
+          onToggleOffline: onToggleOffline,
+          isOffline: isOffline,
         );
       },
     );

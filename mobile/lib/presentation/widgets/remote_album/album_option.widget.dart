@@ -16,6 +16,8 @@ class RemoteAlbumOption extends StatelessWidget {
     this.onShowOptions,
     this.onToggleNameSort,
     this.isNameSort = false,
+    this.onToggleOffline,
+    this.isOffline = false,
     this.iconColor,
     this.iconShadows,
   });
@@ -30,6 +32,8 @@ class RemoteAlbumOption extends StatelessWidget {
   final VoidCallback? onShowOptions;
   final VoidCallback? onToggleNameSort;
   final bool isNameSort;
+  final VoidCallback? onToggleOffline;
+  final bool isOffline;
   final Color? iconColor;
   final List<Shadow>? iconShadows;
 
@@ -95,6 +99,18 @@ class RemoteAlbumOption extends StatelessWidget {
           label: isNameSort ? 'Sort by date' : 'Sort by name',
           iconData: isNameSort ? Icons.calendar_month_outlined : Icons.sort_by_alpha_rounded,
           onPressed: onToggleNameSort,
+          menuItem: true,
+        ),
+      );
+    }
+
+    // Custom fork: keep thumbnails + previews of this album on the phone (offline view mode)
+    if (onToggleOffline != null) {
+      menuChildren.add(
+        BaseActionButton(
+          label: isOffline ? 'Remove offline copy' : 'Keep offline',
+          iconData: isOffline ? Icons.cloud_off_rounded : Icons.download_for_offline_outlined,
+          onPressed: onToggleOffline,
           menuItem: true,
         ),
       );

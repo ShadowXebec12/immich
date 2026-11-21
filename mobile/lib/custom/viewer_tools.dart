@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/custom/gallery_labels.dart';
 import 'package:immich_mobile/custom/label_sheet.dart';
+import 'package:immich_mobile/custom/pc_copy.dart';
 import 'package:immich_mobile/providers/infrastructure/asset_viewer/asset.provider.dart';
 import 'package:immich_mobile/services/action.service.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
@@ -190,6 +191,23 @@ List<BaseAsset> labelTargets(WidgetRef ref, BaseAsset asset) {
   return selected != null && selected.isNotEmpty ? selected.toList() : [asset];
 }
 
+/// #3: drop the grid selection once a batch label / quick tag / rating went through (mix gallery #78).
+void clearSelectionAfterBatch(WidgetRef ref, int count) {
+  if (count < 2) {
+    return;
+  }
+  final container = ref.read(viewerSelectContainerProvider);
+  if (container != null) {
+    container.read(multiSelectProvider.notifier).reset();
+    return;
+  }
+  try {
+    ref.read(multiSelectProvider.notifier).reset();
+  } catch (_) {
+    // not under a grid scope: nothing selected to clear
+  }
+}
+
 Future<void> applyLabel(WidgetRef ref, BaseAsset asset, String label, {required bool add}) async {
   final toast = ref.read(toastServiceProvider);
   final targets = labelTargets(ref, asset);
@@ -200,6 +218,7 @@ Future<void> applyLabel(WidgetRef ref, BaseAsset asset, String label, {required 
     return;
   }
   toast.success(add ? "Labeled $label" : "Removed $label");
+  clearSelectionAfterBatch(ref, targets.length);
   if (add && targets.length == 1) {
     EventStream.shared.emit(const ViewerAdvanceEvent());
   }
@@ -256,8 +275,35 @@ class _ViewerQuickTagBarState extends ConsumerState<ViewerQuickTagBar> {
       setState(() => _lists = isOn ? ({..._lists}..remove(tag.list)) : {..._lists, tag.list!});
     }
     toast.success(isOn ? "Removed ${tag.title}" : "Added to ${tag.title}");
+    clearSelectionAfterBatch(ref, targets.length);
     if (!isOn && targets.length == 1) {
       EventStream.shared.emit(const ViewerAdvanceEvent());
+    }
+  }
+
+  Future<void> _pcPasteMenu(BuildContext context) async {
+    final keys = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => ListView(
+        shrinkWrap: true,
+        children: [
+          ListTile(
+            leading: const Icon(Icons.desktop_windows_outlined),
+            title: const Text("Copy image on the PC"),
+            onTap: () => Navigator.of(context).pop(''),
+          ),
+          for (final (k, title) in kPcPasteKeys)
+            ListTile(
+              leading: const Icon(Icons.keyboard_outlined),
+              title: Text(title),
+              onTap: () => Navigator.of(context).pop(k),
+            ),
+        ],
+      ),
+    );
+    if (keys != null) {
+      await copyToPc(ref, widget.asset, keys: keys, title: keys.isEmpty ? "Copy to PC" : "Paste on PC");
     }
   }
 
@@ -286,6 +332,18 @@ class _ViewerQuickTagBarState extends ConsumerState<ViewerQuickTagBar> {
             icon: Icons.label_outline_rounded,
             on: false,
             onTap: (_) => unawaited(showLabelSheet(context, ref, widget.asset)),
+          ),
+          const SizedBox(width: 6),
+          // like the mix gallery's Copy to PC button: tap = copy on the PC, long press = paste + Alt keys
+          GestureDetector(
+            onLongPress: () => unawaited(_pcPasteMenu(context)),
+            child: _Chip(
+              key: const ValueKey('viewer_pc_copy'),
+              text: "PC",
+              icon: Icons.desktop_windows_outlined,
+              on: false,
+              onTap: (_) => unawaited(copyToPc(ref, widget.asset)),
+            ),
           ),
         ],
       ),
@@ -396,6 +454,7 @@ Future<void> _saveLabels(WidgetRef ref, List<BaseAsset> targets, List<String> ad
       ..insert(0, l);
   }
   await recordLabelHistory(ref, adds);
+  clearSelectionAfterBatch(ref, targets.length);
   toast.success(
     [
       if (adds.isNotEmpty) "Added ${adds.join(', ')}",
@@ -442,7 +501,12 @@ Future<void> showQuickTagMenu(BuildContext context, WidgetRef ref, List<BaseAsse
       }
     }
   }
-  error == null ? toast.success("Added ${targets.length} to ${picked.title}") : toast.error(error);
+  if (error == null) {
+    toast.success("Added ${targets.length} to ${picked.title}");
+    clearSelectionAfterBatch(ref, targets.length);
+  } else {
+    toast.error(error);
+  }
 }
 
 /// Stars: Immich's own rating (shown in Immich) + the mix gallery ratings json on the PC.
@@ -463,7 +527,12 @@ Future<void> rateAssets(WidgetRef ref, List<BaseAsset> targets, int stars) async
     }
     error ??= await notifier.rate(t, stars);
   }
-  error == null ? toast.success(stars == 0 ? "Rating cleared" : "Rated $stars") : toast.error(error);
+  if (error == null) {
+    toast.success(stars == 0 ? "Rating cleared" : "Rated $stars");
+    clearSelectionAfterBatch(ref, targets.length);
+  } else {
+    toast.error(error);
+  }
 }
 
 Future<void> showRateMenu(BuildContext context, WidgetRef ref, List<BaseAsset> targets) async {
@@ -597,54 +666,6 @@ class ViewerGestureSettings extends ConsumerWidget {
             ),
           ),
       ],
-    );
-  }
-}
-
-/// DOpus labels drawn on a grid thumbnail (top left, at most 2 + a count).
-class GridLabelBadges extends ConsumerWidget {
-  const GridLabelBadges({super.key, required this.asset});
-
-  final BaseAsset asset;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final labels = ref.watch(galleryLabelsProvider.select((m) => m[labelKey(asset)]));
-    if (labels == null) {
-      // ask after this frame: no provider writes during build
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) {
-          ref.read(galleryLabelsProvider.notifier).want(asset);
-        }
-      });
-      return const SizedBox.shrink();
-    }
-    if (labels.isEmpty) {
-      return const SizedBox.shrink();
-    }
-    final shown = labels.take(2).toList();
-    return Padding(
-      padding: const EdgeInsets.all(3),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final (i, label) in shown.indexed)
-            Container(
-              margin: const EdgeInsets.only(bottom: 2),
-              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
-              child: Text(
-                i == shown.length - 1 && labels.length > shown.length
-                    ? "$label +${labels.length - shown.length}"
-                    : label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 10, height: 1.2),
-              ),
-            ),
-        ],
-      ),
     );
   }
 }

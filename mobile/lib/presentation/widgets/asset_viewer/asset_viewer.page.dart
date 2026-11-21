@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:immich_mobile/presentation/widgets/asset_viewer/viewer_select_button.widget.dart';
 import 'dart:math' as math;
 
 import 'package:auto_route/auto_route.dart';
@@ -378,6 +379,8 @@ class _AssetViewerState extends ConsumerState<AssetViewer> {
                 ),
               ),
             ),
+            // Custom fork #3: mark photos that are in the grid selection
+            ViewerSelectedBadge(asset: ref.watch(assetViewerProvider.select((s) => s.currentAsset))),
             if (!CurrentPlatform.isIOS)
               IgnorePointer(
                 child: AnimatedContainer(

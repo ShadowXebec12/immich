@@ -51,7 +51,9 @@ class _ViewerSelectButtonState extends ConsumerState<ViewerSelectButton> {
     if (container == null || _sub == null) {
       return const SizedBox.shrink();
     }
-    final isSelected = _selected.contains(widget.asset);
+    // #3: the viewer's copy of a photo can be a different object than the grid's: match by id
+    final match = _selected.where((a) => a.heroTag == widget.asset.heroTag).firstOrNull;
+    final isSelected = match != null;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -67,10 +69,80 @@ class _ViewerSelectButtonState extends ConsumerState<ViewerSelectButton> {
         IconButton(
           key: const Key('viewer_select'),
           tooltip: isSelected ? "Deselect" : "Select",
-          onPressed: () => container.read(multiSelectProvider.notifier).toggleAssetSelection(widget.asset),
-          icon: Icon(isSelected ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded),
+          onPressed: () => isSelected
+              ? container.read(multiSelectProvider.notifier).deselectAsset(match)
+              : container.read(multiSelectProvider.notifier).selectAsset(widget.asset),
+          icon: Icon(
+            isSelected ? Icons.check_circle_rounded : Icons.check_circle_outline_rounded,
+            color: isSelected ? Colors.lightBlueAccent : null,
+            size: isSelected ? 28 : null,
+          ),
         ),
       ],
+    );
+  }
+}
+
+/// #3: always-visible mark on the photo when it is in the grid selection (top bar may be hidden).
+class ViewerSelectedBadge extends ConsumerStatefulWidget {
+  const ViewerSelectedBadge({super.key, required this.asset});
+
+  final BaseAsset? asset;
+
+  @override
+  ConsumerState<ViewerSelectedBadge> createState() => _ViewerSelectedBadgeState();
+}
+
+class _ViewerSelectedBadgeState extends ConsumerState<ViewerSelectedBadge> {
+  ProviderSubscription<MultiSelectState>? _sub;
+  Set<BaseAsset> _selected = const {};
+
+  @override
+  void initState() {
+    super.initState();
+    final container = ref.read(viewerSelectContainerProvider);
+    _sub = container?.listen<MultiSelectState>(multiSelectProvider, (_, next) {
+      if (mounted) {
+        setState(() => _selected = next.selectedAssets);
+      }
+    }, fireImmediately: true);
+  }
+
+  @override
+  void dispose() {
+    _sub?.close();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final asset = widget.asset;
+    if (asset == null || !_selected.any((a) => a.heroTag == asset.heroTag)) {
+      return const SizedBox.shrink();
+    }
+    return IgnorePointer(
+      child: SafeArea(
+        child: Align(
+          alignment: Alignment.topLeft,
+          child: Container(
+            key: const Key('viewer_selected_badge'),
+            margin: const EdgeInsets.only(left: 12, top: 60),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(color: Colors.lightBlueAccent, borderRadius: BorderRadius.circular(12)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.check_circle_rounded, size: 16, color: Colors.black),
+                const SizedBox(width: 4),
+                Text(
+                  "Selected (${_selected.length})",
+                  style: const TextStyle(color: Colors.black, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

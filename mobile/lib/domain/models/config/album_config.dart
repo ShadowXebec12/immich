@@ -16,5 +16,6 @@ abstract class AlbumConfig with _$AlbumConfig {
     @Default([]) List<String> nameSortIds,
     @Default([]) List<String> pinnedIds,
     @Default(true) bool swipeSearch,
+    @Default([]) List<String> offlineIds,
   }) = _AlbumConfig;
 }

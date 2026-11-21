@@ -5,12 +5,14 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:immich_mobile/constants/enums.dart';
 import 'package:immich_mobile/custom/gen_menu.dart';
 import 'package:immich_mobile/custom/pc_copy.dart';
+import 'package:immich_mobile/custom/stack_export.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/providers/asset_viewer/asset_viewer.provider.dart';
 import 'package:immich_mobile/providers/cast.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/current_album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/setting.provider.dart';
+import 'package:immich_mobile/providers/infrastructure/settings.provider.dart' show appConfigProvider;
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/routes.provider.dart';
 import 'package:immich_mobile/providers/server_info.provider.dart';
@@ -78,6 +80,13 @@ class ViewerKebabMenu extends ConsumerWidget {
               children: [
                 // Custom fork: mix gallery gen buttons + copy prompt parts
                 if (asset.hasRemote) ...[
+                  if (lastGen(ref.watch(appConfigProvider.select((c) => c.viewer.lastGen))) case final last?)
+                    MenuItemButton(
+                      key: const ValueKey('kebab_gen_again'),
+                      leadingIcon: const Icon(Icons.replay_rounded),
+                      onPressed: () => unawaited(genAgain(ref, asset)),
+                      child: Text("Again: ${lastGenSummary(last)}"),
+                    ),
                   MenuItemButton(
                     key: const ValueKey('kebab_generate'),
                     leadingIcon: const Icon(Icons.auto_awesome),
@@ -91,6 +100,13 @@ class ViewerKebabMenu extends ConsumerWidget {
                     child: const Text("Copy prompt parts"),
                   ),
                   ...copyMenuEntries(context, ref, asset),
+                  if (asset is RemoteAsset && asset.stackId != null)
+                    MenuItemButton(
+                      key: const ValueKey('kebab_stack_export'),
+                      leadingIcon: const Icon(Icons.burst_mode_outlined),
+                      onPressed: () => unawaited(exportStackOf(context, ref, asset)),
+                      child: const Text("Export stack (save / PDF)"),
+                    ),
                   const Divider(height: 1),
                 ],
                 ...menuChildren,

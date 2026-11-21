@@ -27,6 +27,9 @@ enum SettingsKey<T> {
   viewerGestures<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
   viewerLabelHistory<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
   viewerLabelPins<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  // Custom fork: last Generate sheet gen [preset title, i2i strength] and grid label badges "label=text=color"
+  viewerLastGen<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
+  viewerLabelBadges<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Network
   networkAutoEndpointSwitching<bool>(),
@@ -50,6 +53,8 @@ enum SettingsKey<T> {
   albumPinnedIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
   // Custom fork: two-finger swipe up opens the album search sheet
   albumSwipeSearch<bool>(),
+  // Custom fork: ids of albums kept offline (thumbnails + previews saved on the phone)
+  albumOfflineIds<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Backup
   backupEnabled<bool>(),
