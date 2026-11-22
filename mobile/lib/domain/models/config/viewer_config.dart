@@ -21,5 +21,7 @@ abstract class ViewerConfig with _$ViewerConfig {
     // Custom fork (#4): gen queue ("immichId|name") and the last Generate sheet options (JSON)
     @Default(<String>[]) List<String> genQueue,
     String? lastGenOptions,
+    // Custom fork: ask "are you sure" before Move on PC
+    @Default(true) bool confirmPcMove,
   }) = _ViewerConfig;
 }

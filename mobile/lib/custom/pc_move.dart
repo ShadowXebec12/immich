@@ -10,6 +10,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:immich_mobile/custom/gallery_labels.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
 
 /// One move menu: a model (v4.5 / v3 / v5) and its destination folders.
@@ -43,9 +44,67 @@ Future<List<PcMoveGroup>> pcMoveGroups() async {
   return groups;
 }
 
-/// Moves [assets] on the PC to destination [dest] of model [ver].
-Future<void> movePhotosOnPc(WidgetRef ref, List<BaseAsset> assets, String ver, int dest, String folder) async {
+/// "Are you sure" before a move (Settings > Viewer > Confirm Move on PC, on by default).
+Future<bool> confirmPcMove(BuildContext context, int count, String folder) async =>
+    await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Move on PC?"),
+        content: Text("Move $count photo${count == 1 ? '' : 's'} to \"$folder\"?"),
+        actions: [
+          TextButton(
+            key: const ValueKey('pc_move_cancel'),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text("Cancel"),
+          ),
+          FilledButton(
+            key: const ValueKey('pc_move_ok'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text("Move"),
+          ),
+        ],
+      ),
+    ) ==
+    true;
+
+/// Puts the files of one move back where they were (server keeps the exact paths, last 50 moves).
+Future<void> undoPcMove(BuildContext context, String token) async {
+  String msg;
+  try {
+    final res = await http
+        .post(
+          Uri.parse('$kGalleryServer/immich_move_undo'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({'undo': token}),
+        )
+        .timeout(const Duration(seconds: 60));
+    final d = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+    final failed = (d['failed'] as List? ?? const []).length;
+    msg = d['ok'] == true
+        ? "Undone: ${d['undone']} moved back${failed > 0 ? ' ($failed could not)' : ''}"
+        : "Undo failed: ${d['error']}";
+  } catch (_) {
+    msg = "Undo failed: gallery server not reachable";
+  }
+  if (context.mounted) {
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(SnackBar(content: Text(msg)));
+  }
+}
+
+/// Moves [assets] on the PC to destination [dest] of model [ver] (asks first if the setting is on;
+/// the result bar has Undo).
+Future<void> movePhotosOnPc(
+  BuildContext context,
+  WidgetRef ref,
+  List<BaseAsset> assets,
+  String ver,
+  int dest,
+  String folder,
+) async {
   final toast = ref.read(toastServiceProvider);
+  if (ref.read(appConfigProvider).viewer.confirmPcMove && !await confirmPcMove(context, assets.length, folder)) {
+    return;
+  }
   final items = [
     for (final a in assets)
       if (a.remoteId != null) {'immich_id': a.remoteId!, 'name': a.name},
@@ -70,7 +129,19 @@ Future<void> movePhotosOnPc(WidgetRef ref, List<BaseAsset> assets, String ver, i
     final moved = (d['moved'] as num?)?.toInt() ?? 0;
     final failed = (d['failed'] as List? ?? const []).length;
     final msg = "Moved $moved to $folder${failed > 0 ? ' ($failed not moved)' : ''}";
-    failed > 0 ? toast.error(msg) : toast.success(msg);
+    final token = (d['undo'] ?? '').toString();
+    final bar = context.mounted ? ScaffoldMessenger.maybeOf(context) : null;
+    if (token.isNotEmpty && bar != null) {
+      bar.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 8),
+          content: Text(msg),
+          action: SnackBarAction(label: "Undo", onPressed: () => unawaited(undoPcMove(context, token))),
+        ),
+      );
+    } else {
+      failed > 0 ? toast.error(msg) : toast.success(msg);
+    }
   } catch (_) {
     toast.error("Move failed: gallery server not reachable");
   }
@@ -120,8 +191,8 @@ Future<void> showPcMoveSheet(BuildContext context, WidgetRef ref, List<BaseAsset
       ],
     ),
   );
-  if (picked != null) {
-    await movePhotosOnPc(ref, assets, picked.$1, picked.$2, picked.$3);
+  if (picked != null && context.mounted) {
+    await movePhotosOnPc(context, ref, assets, picked.$1, picked.$2, picked.$3);
   }
 }
 
@@ -177,4 +248,18 @@ class _PcMoveMenuEntriesState extends State<PcMoveMenuEntries> {
       ],
     );
   }
+}
+
+/// Settings > Viewer: confirm before Move on PC.
+class PcMoveConfirmSetting extends ConsumerWidget {
+  const PcMoveConfirmSetting({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => SwitchListTile(
+    key: const ValueKey('setting_confirm_pc_move'),
+    title: const Text("Confirm Move on PC"),
+    subtitle: const Text("Ask \"are you sure\" before moving photos on the PC"),
+    value: ref.watch(appConfigProvider.select((c) => c.viewer.confirmPcMove)),
+    onChanged: (v) => unawaited(ref.read(settingsProvider).write(.viewerConfirmPcMove, v)),
+  );
 }

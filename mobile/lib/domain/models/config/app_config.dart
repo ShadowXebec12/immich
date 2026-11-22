@@ -67,6 +67,7 @@ abstract class AppConfig with _$AppConfig {
             .viewerLabelBadges => viewer.labelBadges,
             .viewerGenQueue => viewer.genQueue,
             .viewerLastGenOptions => viewer.lastGenOptions,
+            .viewerConfirmPcMove => viewer.confirmPcMove,
             .networkAutoEndpointSwitching => network.autoEndpointSwitching,
             .networkPreferredWifiName => network.preferredWifiName,
             .networkLocalEndpoint => network.localEndpoint,
@@ -140,6 +141,7 @@ abstract class AppConfig with _$AppConfig {
       .viewerLabelBadges => copyWith(viewer: viewer.copyWith(labelBadges: value as List<String>)),
       .viewerGenQueue => copyWith(viewer: viewer.copyWith(genQueue: value as List<String>)),
       .viewerLastGenOptions => copyWith(viewer: viewer.copyWith(lastGenOptions: value as String?)),
+      .viewerConfirmPcMove => copyWith(viewer: viewer.copyWith(confirmPcMove: value as bool)),
       .networkAutoEndpointSwitching => copyWith(network: network.copyWith(autoEndpointSwitching: value as bool)),
       .networkPreferredWifiName => copyWith(
         network: network.copyWith(preferredWifiName: .fromNullable(value as String?)),

@@ -33,6 +33,7 @@ enum SettingsKey<T> {
   // Custom fork (#4): photos queued for one gen job ("immichId|name") and the full last Generate settings (JSON)
   viewerGenQueue<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
   viewerLastGenOptions<String?>(),
+  viewerConfirmPcMove<bool>(),
 
   // Network
   networkAutoEndpointSwitching<bool>(),

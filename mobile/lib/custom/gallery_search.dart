@@ -3,6 +3,7 @@
 // (matched on the PC by NTFS file id, never by file name); the phone orders them newest first.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:drift/drift.dart' hide Column;
@@ -12,6 +13,7 @@ import 'package:immich_mobile/custom/gallery_labels.dart';
 import 'package:immich_mobile/data/db/main/database.dart';
 import 'package:immich_mobile/data/db/main/table/remote/asset.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:path_provider/path_provider.dart';
 
 const kGalleryModels = ['v4.5', 'v4', 'v3', 'v5'];
 
@@ -25,6 +27,10 @@ class GalleryFacetItem {
 
   /// Lower-case text the picker filter matches: mixes also carry their full artist list.
   String get search => (_search ?? title).toLowerCase();
+
+  Map<String, Object?> toJson() => {'k': key, 't': title, 'c': count, if (_search != null) 's': _search};
+  static GalleryFacetItem fromJson(Map j) =>
+      GalleryFacetItem(j['k'].toString(), j['t'].toString(), (j['c'] as num?)?.toInt() ?? 0, search: j['s'] as String?);
 }
 
 /// One /search request per model: (ver, extra label, excluded label). v4 / v4.5 share the '45' index;
@@ -151,10 +157,8 @@ Future<List<RemoteAsset>> galleryFilterAssets(
   required List<String> chars,
   required List<String> labels,
   required List<String> mixes,
-}) async => galleryAssetsByIds(
-  db,
-  await galleryFilterIds(db, models: models, chars: chars, labels: labels, mixes: mixes),
-);
+}) async =>
+    galleryAssetsByIds(db, await galleryFilterIds(db, models: models, chars: chars, labels: labels, mixes: mixes));
 
 /// #4: the labels of one /label_groups group (e.g. "Body", "Male", "Model / Request type").
 final Map<String, List<String>> _groupCache = {};
@@ -164,12 +168,70 @@ Future<List<String>> galleryGroupLabels(String group) async {
   if (cached != null) {
     return cached;
   }
-  final res = await http.get(Uri.parse('$kGalleryServer/label_groups')).timeout(const Duration(seconds: 30));
-  final list = jsonDecode(utf8.decode(res.bodyBytes)) as List;
-  for (final g in list) {
-    _groupCache[g['name'].toString()] = [for (final l in (g['labels'] as List? ?? const [])) l.toString()];
+  Future<void> fill(String text) async {
+    final list = jsonDecode(text) as List;
+    for (final g in list) {
+      _groupCache[g['name'].toString()] = [for (final l in (g['labels'] as List? ?? const [])) l.toString()];
+    }
   }
+
+  Future<String> fetch() async {
+    final res = await http.get(Uri.parse('$kGalleryServer/label_groups')).timeout(const Duration(seconds: 30));
+    if (res.statusCode != 200) {
+      throw Exception('label_groups ${res.statusCode}');
+    }
+    return utf8.decode(res.bodyBytes);
+  }
+
+  await _diskCached('label_groups', fetch, fill);
   return _groupCache[group] ?? const [];
+}
+
+/// Facet lists rarely change: show the copy saved on the phone at once and refresh it in the background
+/// (the download is what made the filter sheets slow over mobile data, the server answers in ms).
+final Set<String> _refreshed = {};
+
+/// Tests point this at a temp folder.
+Future<Directory> Function() galleryCacheDir = getApplicationSupportDirectory;
+
+@visibleForTesting
+void galleryFacetCacheReset() {
+  _refreshed.clear();
+  _facetCache.clear();
+  _groupCache.clear();
+}
+
+Future<void> _diskCached(String name, Future<String> Function() fetch, Future<void> Function(String) fill) async {
+  File? file;
+  try {
+    file = File('${(await galleryCacheDir()).path}/gallery_$name.json');
+  } catch (_) {}
+  Future<void> refresh() async {
+    final text = await fetch();
+    await fill(text);
+    try {
+      await file?.writeAsString(text);
+    } catch (_) {}
+  }
+
+  if (file != null && file.existsSync()) {
+    try {
+      await fill(await file.readAsString());
+      if (_refreshed.add(name)) {
+        unawaited(refresh().catchError((_) {}));
+      }
+      return;
+    } catch (_) {}
+  }
+  _refreshed.add(name);
+  await refresh();
+}
+
+/// Search page open: load the filter lists before the first chip tap.
+void galleryPrefetchFacets() {
+  unawaited(galleryFacet('labels').then((_) {}, onError: (_) {}));
+  unawaited(galleryFacet('chars').then((_) {}, onError: (_) {}));
+  unawaited(galleryGroupLabels('Body').then((_) {}, onError: (_) {}));
 }
 
 /// Label facet limited to one label group, with the same counts as the Labels chip.
@@ -192,6 +254,18 @@ Future<List<GalleryFacetItem>> galleryFacet(String kind) async {
   if (cached != null) {
     return cached;
   }
+  await _diskCached('facet_$kind', () async => jsonEncode([for (final i in await _fetchFacet(kind)) i.toJson()]), (
+    text,
+  ) async {
+    final items = [for (final j in jsonDecode(text) as List) GalleryFacetItem.fromJson(j as Map)];
+    if (items.isNotEmpty) {
+      _facetCache[kind] = items;
+    }
+  });
+  return _facetCache[kind] ?? const [];
+}
+
+Future<List<GalleryFacetItem>> _fetchFacet(String kind) async {
   final List<GalleryFacetItem> items;
   if (kind == 'mixes') {
     final res = await http
@@ -212,9 +286,7 @@ Future<List<GalleryFacetItem>> galleryFacet(String kind) async {
     final responses = await Future.wait([
       for (final ver in const ['', 'v3', 'v5'])
         http
-            .get(
-              Uri.parse('$kGalleryServer/searchfacets').replace(queryParameters: {if (ver.isNotEmpty) 'ver': ver}),
-            )
+            .get(Uri.parse('$kGalleryServer/searchfacets').replace(queryParameters: {if (ver.isNotEmpty) 'ver': ver}))
             .timeout(const Duration(seconds: 60)),
     ]);
     for (final res in responses) {
@@ -230,8 +302,8 @@ Future<List<GalleryFacetItem>> galleryFacet(String kind) async {
     items = [for (final e in counts.entries) GalleryFacetItem(e.key, e.key, e.value)];
   }
   items.sort((a, b) => b.count.compareTo(a.count));
-  if (items.isNotEmpty) {
-    _facetCache[kind] = items;
+  if (items.isEmpty) {
+    throw Exception('no $kind from the gallery server');
   }
   return items;
 }
@@ -286,7 +358,10 @@ class _GalleryFacetPickerState extends State<GalleryFacetPicker> {
       return Padding(padding: const EdgeInsets.all(16), child: Text(_error!));
     }
     if (items == null) {
-      return const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()));
+      return const Padding(
+        padding: EdgeInsets.all(24),
+        child: Center(child: CircularProgressIndicator()),
+      );
     }
     // every typed word must appear (artist names, mix name or id), e.g. "riz scia"
     final words = _query.text.trim().toLowerCase().split(RegExp(r'[\s,]+')).where((w) => w.isNotEmpty).toList();

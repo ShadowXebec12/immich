@@ -84,6 +84,11 @@ class SearchPage extends HookConsumerWidget {
     final labelKinds = useState<Map<String, List<String>>>({});
 
     final userPreferences = ref.watch(userMetadataPreferencesProvider);
+    // filter lists come from the phone's saved copy, refreshed in the background
+    useEffect(() {
+      galleryPrefetchFacets();
+      return null;
+    }, const []);
 
     void search(SearchFilter f) {
       if (f == filter.value) {

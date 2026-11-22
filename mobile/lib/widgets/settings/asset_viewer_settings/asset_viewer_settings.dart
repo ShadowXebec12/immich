@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:immich_mobile/custom/album_search_sheet.dart';
 import 'package:immich_mobile/custom/label_badges.dart';
+import 'package:immich_mobile/custom/pc_move.dart';
 import 'package:immich_mobile/custom/viewer_tools.dart';
 import 'package:immich_mobile/widgets/settings/asset_viewer_settings/image_viewer_quality_setting.dart';
 import 'package:immich_mobile/widgets/settings/asset_viewer_settings/image_viewer_tap_to_navigate_setting.dart';
@@ -19,6 +20,7 @@ class AssetViewerSettings extends StatelessWidget {
       const ViewerGestureSettings(),
       const LabelBadgeSettingsTile(),
       const AlbumSwipeSearchSetting(),
+      const PcMoveConfirmSetting(),
       const VideoViewerSettings(),
       const SlideshowSettings(),
     ];

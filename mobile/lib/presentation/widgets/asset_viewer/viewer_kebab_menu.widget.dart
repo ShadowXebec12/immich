@@ -100,11 +100,13 @@ class ViewerKebabMenu extends ConsumerWidget {
                     key: const ValueKey('kebab_gen_queue'),
                     leadingIcon: const Icon(Icons.playlist_add_rounded),
                     onPressed: () => unawaited(addToGenQueue(ref, labelTargets(ref, asset))),
-                    child: Text("Add to gen queue (${ref.watch(appConfigProvider.select((c) => c.viewer.genQueue.length))})"),
+                    child: Text(
+                      "Add to gen queue (${ref.watch(appConfigProvider.select((c) => c.viewer.genQueue.length))})",
+                    ),
                   ),
                   PcMoveMenuEntries(
                     onMove: (ver, dest, folder) =>
-                        unawaited(movePhotosOnPc(ref, labelTargets(ref, asset), ver, dest, folder)),
+                        unawaited(movePhotosOnPc(context, ref, labelTargets(ref, asset), ver, dest, folder)),
                   ),
                   MenuItemButton(
                     key: const ValueKey('kebab_copy_parts'),
