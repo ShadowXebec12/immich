@@ -179,6 +179,10 @@ class GenOptions {
   String extraTags = '';
   String extraTarget = 'main';
   int count = 1;
+  // chain / count (char gen setting, same as Discord !count)
+  int rep2img = 1;
+  int repi2i = 1;
+  double chainStrength = 0;
 
   static const crefModes = ['character', 'character&style', 'style'];
 
@@ -206,6 +210,9 @@ class GenOptions {
     'extraTags': extraTags,
     'extraTarget': extraTarget,
     'count': count,
+    'rep2img': rep2img,
+    'repi2i': repi2i,
+    'chainStrength': chainStrength,
   };
 
   static GenOptions fromJson(Map j) {
@@ -231,7 +238,10 @@ class GenOptions {
       ..extraUC = t('extraUC', '')
       ..extraTags = t('extraTags', '')
       ..extraTarget = t('extraTarget', 'main')
-      ..count = (j['count'] as num?)?.toInt() ?? 1;
+      ..count = (j['count'] as num?)?.toInt() ?? 1
+      ..rep2img = (j['rep2img'] as num?)?.toInt() ?? 1
+      ..repi2i = (j['repi2i'] as num?)?.toInt() ?? 1
+      ..chainStrength = d('chainStrength', 0);
     if (!kGenPresets.any((p) => p.title == o.preset)) {
       o.preset = 'Regen';
     }
@@ -246,6 +256,9 @@ class GenOptions {
     if (char.isNotEmpty && !isI2i) char,
     if (mixId.isNotEmpty && !isI2i) "mix $mixId",
     if (usesStrength) strength.toStringAsFixed(2),
+    if (count > 1) "x$count",
+    if (rep2img > 1) "txt2img x$rep2img",
+    if (repi2i > 1) "i2i chain x$repi2i",
   ].join(', ');
 
   String _f2(double v) => v.toStringAsFixed(2);
@@ -409,12 +422,41 @@ Future<bool> _sendOne(ToastService toast, BaseAsset asset, GenOptions o) async {
   return false;
 }
 
+/// Chain / count = the char gen's rep2img / repi2i / chainstrength (Discord !count).
+/// Empty [sets] = read the current values (v4.5 account). Writes go to both accounts like !count model:both.
+Future<Map?> chargenCount(Map<String, String> sets) async {
+  Map? first;
+  for (final account in sets.isEmpty ? const [''] : const ['', 'v5']) {
+    for (final e in (sets.isEmpty ? const {'rep2img': ''} : sets).entries) {
+      try {
+        final res = await http
+            .post(
+              Uri.parse('$kGalleryServer/chargen'),
+              headers: {'Content-Type': 'application/json'},
+              body: jsonEncode({
+                'cmd': 'set',
+                if (account.isNotEmpty) 'account': account,
+                'args': {'name': e.key, 'value': e.value},
+              }),
+            )
+            .timeout(const Duration(seconds: 10));
+        final d = res.statusCode == 200 ? jsonDecode(utf8.decode(res.bodyBytes)) : null;
+        if (d is Map && d['ok'] == true && account.isEmpty) {
+          first = d;
+        }
+      } catch (_) {}
+    }
+  }
+  return first;
+}
+
 Future<void> showGenSheet(BuildContext context, WidgetRef ref, BaseAsset asset, {bool copyOnly = false}) =>
     showModalBottomSheet<void>(
       context: context,
       useSafeArea: true,
       isScrollControlled: true,
-      builder: (_) => _GenSheet(
+      showDragHandle: true,
+      builder: (_) => GenSheet(
         asset: asset,
         copyOnly: copyOnly,
         toast: ref.read(toastServiceProvider),
@@ -429,8 +471,9 @@ Future<void> showGenSheet(BuildContext context, WidgetRef ref, BaseAsset asset, 
       ),
     );
 
-class _GenSheet extends StatefulWidget {
-  const _GenSheet({
+class GenSheet extends StatefulWidget {
+  const GenSheet({
+    super.key,
     required this.asset,
     required this.copyOnly,
     required this.toast,
@@ -449,10 +492,10 @@ class _GenSheet extends StatefulWidget {
   final Future<void> Function() clearQueue;
 
   @override
-  State<_GenSheet> createState() => _GenSheetState();
+  State<GenSheet> createState() => _GenSheetState();
 }
 
-class _GenSheetState extends State<_GenSheet> {
+class _GenSheetState extends State<GenSheet> {
   String? _path;
   Map? _info;
   String? _error;
@@ -461,6 +504,7 @@ class _GenSheetState extends State<_GenSheet> {
   late GenOptions _o = widget.last?.copy() ?? GenOptions();
   late List<String> _queue = widget.queue;
   bool _useQueued = false;
+  Map? _countNow; // chain/count values the char gen has now (null = not read)
   final _typedChar = TextEditingController();
   late final _extraUC = TextEditingController(text: _o.extraUC);
   late final _extraTags = TextEditingController(text: _o.extraTags);
@@ -469,6 +513,7 @@ class _GenSheetState extends State<_GenSheet> {
   void initState() {
     super.initState();
     unawaited(_load());
+    unawaited(_loadCount());
   }
 
   @override
@@ -482,9 +527,9 @@ class _GenSheetState extends State<_GenSheet> {
   Future<void> _load() async {
     final ref = assetRef(widget.asset);
     try {
-      final uri = Uri.parse('$kGalleryServer/prompt').replace(
-        queryParameters: {if (ref['immich_id'] != null) 'immich_id': ref['immich_id'], 'n': ref['name']},
-      );
+      final uri = Uri.parse(
+        '$kGalleryServer/prompt',
+      ).replace(queryParameters: {if (ref['immich_id'] != null) 'immich_id': ref['immich_id'], 'n': ref['name']});
       final res = await http.get(uri).timeout(const Duration(seconds: 20));
       if (!mounted) {
         return;
@@ -501,6 +546,37 @@ class _GenSheetState extends State<_GenSheet> {
       if (mounted) {
         setState(() => _error = "Gallery server not reachable");
       }
+    }
+  }
+
+  Future<void> _loadCount() async {
+    final d = await chargenCount(const {});
+    if (d == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _countNow = d;
+      _o
+        ..rep2img = (d['rep2img'] as num?)?.toInt() ?? 1
+        ..repi2i = (d['repi2i'] as num?)?.toInt() ?? 1
+        ..chainStrength = (d['chainstrength'] as num?)?.toDouble() ?? 0;
+    });
+  }
+
+  /// Pushes chain/count to the char gen only when they differ from what it has now.
+  Future<void> _pushCount(GenOptions o) async {
+    final now = _countNow;
+    if (now == null && o.rep2img == 1 && o.repi2i == 1 && o.chainStrength == 0) {
+      return; // could not read and nothing asked: leave the char gen alone
+    }
+    final sets = <String, String>{
+      if (now == null || (now['rep2img'] as num?)?.toInt() != o.rep2img) 'rep2img': '${o.rep2img}',
+      if (now == null || (now['repi2i'] as num?)?.toInt() != o.repi2i) 'repi2i': '${o.repi2i}',
+      if (now == null || ((now['chainstrength'] as num?)?.toDouble() ?? 0) != o.chainStrength)
+        'chainstrength': o.chainStrength.toStringAsFixed(2),
+    };
+    if (sets.isNotEmpty) {
+      _countNow = await chargenCount(sets) ?? _countNow;
     }
   }
 
@@ -525,6 +601,7 @@ class _GenSheetState extends State<_GenSheet> {
       ..extraTags = _extraTags.text;
     setState(() => _sending = true);
     final o = _o.copy();
+    await _pushCount(o);
     final ok = _useQueued
         ? await sendGenBatch(widget.toast, genQueueItems(_queue), o)
         : await _sendOne(widget.toast, widget.asset, o);
@@ -595,16 +672,15 @@ class _GenSheetState extends State<_GenSheet> {
     }
   }
 
-  Widget _slider(String label, double value, double min, double max, ValueChanged<double> onChanged, {Key? key}) =>
-      Row(
-        children: [
-          SizedBox(width: 110, child: Text(label, style: const TextStyle(fontSize: 13))),
-          Expanded(
-            child: Slider(key: key, value: value.clamp(min, max), min: min, max: max, onChanged: onChanged),
-          ),
-          Text(value.toStringAsFixed(2), style: const TextStyle(fontSize: 13)),
-        ],
-      );
+  Widget _slider(String label, double value, double min, double max, ValueChanged<double> onChanged, {Key? key}) => Row(
+    children: [
+      SizedBox(width: 110, child: Text(label, style: const TextStyle(fontSize: 13))),
+      Expanded(
+        child: Slider(key: key, value: value.clamp(min, max), min: min, max: max, onChanged: onChanged),
+      ),
+      Text(value.toStringAsFixed(2), style: const TextStyle(fontSize: 13)),
+    ],
+  );
 
   Widget _section(String title) => Padding(
     padding: const EdgeInsets.only(top: 14, bottom: 6),
@@ -657,16 +733,20 @@ class _GenSheetState extends State<_GenSheet> {
             ),
           ],
         ),
-      if (widget.last != null)
-        Align(
-          alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            key: const ValueKey('gen_use_last'),
-            onPressed: _useLast,
-            icon: const Icon(Icons.history_rounded, size: 18),
-            label: Text("Use last settings: ${widget.last!.summary}"),
+      const SizedBox(height: 8),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: FilledButton.tonalIcon(
+          key: const ValueKey('gen_use_last'),
+          onPressed: widget.last == null ? null : _useLast,
+          icon: const Icon(Icons.history_rounded, size: 18),
+          label: Text(
+            widget.last == null ? "Use last settings (none yet)" : "Use last settings: ${widget.last!.summary}",
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
+      ),
       _section("Mode"),
       Wrap(
         spacing: 8,
@@ -787,10 +867,13 @@ class _GenSheetState extends State<_GenSheet> {
         Row(
           children: [
             const SizedBox(width: 110, child: Text("Ref mode", style: TextStyle(fontSize: 13))),
-            DropdownButton<String>(
-              value: GenOptions.crefModes.contains(o.crefMode) ? o.crefMode : 'character',
-              items: [for (final m in GenOptions.crefModes) DropdownMenuItem(value: m, child: Text(m))],
-              onChanged: (v) => setState(() => o.crefMode = v ?? 'character'),
+            Expanded(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                value: GenOptions.crefModes.contains(o.crefMode) ? o.crefMode : 'character',
+                items: [for (final m in GenOptions.crefModes) DropdownMenuItem(value: m, child: Text(m))],
+                onChanged: (v) => setState(() => o.crefMode = v ?? 'character'),
+              ),
             ),
           ],
         ),
@@ -801,14 +884,17 @@ class _GenSheetState extends State<_GenSheet> {
       Row(
         children: [
           const SizedBox(width: 110, child: Text("Model", style: TextStyle(fontSize: 13))),
-          DropdownButton<String>(
-            value: o.model,
-            items: const [
-              DropdownMenuItem(value: 'source', child: Text("Same as source")),
-              DropdownMenuItem(value: 'v4.5', child: Text("v4.5")),
-              DropdownMenuItem(value: 'v5', child: Text("v5")),
-            ],
-            onChanged: (v) => setState(() => o.model = v ?? 'source'),
+          Expanded(
+            child: DropdownButton<String>(
+              isExpanded: true,
+              value: o.model,
+              items: const [
+                DropdownMenuItem(value: 'source', child: Text("Same as source")),
+                DropdownMenuItem(value: 'v4.5', child: Text("v4.5")),
+                DropdownMenuItem(value: 'v5', child: Text("v5")),
+              ],
+              onChanged: (v) => setState(() => o.model = v ?? 'source'),
+            ),
           ),
         ],
       ),
@@ -822,16 +908,52 @@ class _GenSheetState extends State<_GenSheet> {
       Row(
         children: [
           Text("Repeat: ${o.count}"),
+          IconButton(onPressed: o.count > 1 ? () => setState(() => o.count--) : null, icon: const Icon(Icons.remove)),
+          IconButton(onPressed: o.count < 10 ? () => setState(() => o.count++) : null, icon: const Icon(Icons.add)),
+        ],
+      ),
+      _section("Chain / count (char gen, like Discord !count)"),
+      Row(
+        children: [
+          Expanded(child: Text("txt2img per source: ${o.rep2img}")),
           IconButton(
-            onPressed: o.count > 1 ? () => setState(() => o.count--) : null,
+            key: const ValueKey('gen_rep2img_minus'),
+            onPressed: o.rep2img > 1 ? () => setState(() => o.rep2img--) : null,
             icon: const Icon(Icons.remove),
           ),
           IconButton(
-            onPressed: o.count < 10 ? () => setState(() => o.count++) : null,
+            key: const ValueKey('gen_rep2img_plus'),
+            onPressed: o.rep2img < 20 ? () => setState(() => o.rep2img++) : null,
             icon: const Icon(Icons.add),
           ),
         ],
       ),
+      Row(
+        children: [
+          Expanded(child: Text(o.repi2i > 1 ? "i2i chain: ${o.repi2i} long" : "i2i chain: off")),
+          IconButton(
+            key: const ValueKey('gen_repi2i_minus'),
+            onPressed: o.repi2i > 1 ? () => setState(() => o.repi2i--) : null,
+            icon: const Icon(Icons.remove),
+          ),
+          IconButton(
+            key: const ValueKey('gen_repi2i_plus'),
+            onPressed: o.repi2i < 20 ? () => setState(() => o.repi2i++) : null,
+            icon: const Icon(Icons.add),
+          ),
+        ],
+      ),
+      if (o.repi2i > 1) ...[
+        _slider(
+          "Chain strength",
+          o.chainStrength,
+          0,
+          0.99,
+          (v) => setState(() => o.chainStrength = (v * 100).round() / 100),
+          key: const ValueKey('gen_chain_strength'),
+        ),
+        const Text("0 = same strength as the first i2i", style: TextStyle(fontSize: 12, color: Colors.grey)),
+      ],
       _section("Extra for this gen"),
       TextField(
         controller: _extraUC,
@@ -902,7 +1024,24 @@ class _GenSheetState extends State<_GenSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(widget.asset.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.asset.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ),
+              IconButton(
+                key: const ValueKey('gen_close'),
+                tooltip: "Close",
+                onPressed: () => Navigator.of(context).pop(),
+                icon: const Icon(Icons.close_rounded),
+              ),
+            ],
+          ),
           if (_error != null)
             Padding(
               padding: const EdgeInsets.only(top: 12),
@@ -914,7 +1053,9 @@ class _GenSheetState extends State<_GenSheet> {
             const Text("Copy", style: TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             if (copies == null)
-              const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()))
+              const Center(
+                child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()),
+              )
             else if (copies.isEmpty)
               const Text("No prompt found for this image")
             else
@@ -1060,7 +1201,10 @@ Future<void> showCopyMenu(BuildContext context, ToastService toast, String label
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ListTile(dense: true, title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600))),
+          ListTile(
+            dense: true,
+            title: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+          ),
           ListTile(
             key: const Key('copy_and_paste'),
             leading: const Icon(Icons.content_paste_go_rounded),
@@ -1114,11 +1258,7 @@ class CopyTextButton extends StatelessWidget {
     return GestureDetector(
       onLongPress: () => unawaited(showCopyMenu(context, toast, label, text)),
       child: compact
-          ? TextButton.icon(
-              onPressed: copy,
-              icon: const Icon(Icons.copy_rounded, size: 16),
-              label: const Text("Copy"),
-            )
+          ? TextButton.icon(onPressed: copy, icon: const Icon(Icons.copy_rounded, size: 16), label: const Text("Copy"))
           : OutlinedButton(onPressed: copy, child: Text(label)),
     );
   }

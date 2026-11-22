@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:immich_mobile/custom/saved_searches.dart';
 import 'package:immich_mobile/custom/gallery_search.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -95,6 +96,7 @@ class SearchPage extends HookConsumerWidget {
 
       if (!f.isEmpty) {
         unawaited(ref.read(paginatedSearchProvider.notifier).search(f));
+        unawaited(SavedSearchStore.instance.addHistory(f)); // Searches tab
       }
     }
 
@@ -124,10 +126,23 @@ class SearchPage extends HookConsumerWidget {
           mediaTypeCurrentFilterWidget.value = null;
           ratingCurrentFilterWidget.value = null;
           displayOptionCurrentFilterWidget.value = null;
+          Text chip(List<String> l) => Text(l.join(', '), style: context.textTheme.labelLarge);
           galleryWidgets.value = {
-            if (preFilter.galLabels.isNotEmpty)
-              'labels': Text(preFilter.galLabels.join(', '), style: context.textTheme.labelLarge),
+            if (preFilter.galLabels.isNotEmpty) 'labels': chip(preFilter.galLabels),
+            // saved / bookmarked searches bring these back too
+            if (preFilter.galChars.isNotEmpty) 'chars': chip(preFilter.galChars),
+            if (preFilter.galMixes.isNotEmpty) 'mixes': chip(preFilter.galMixes),
+            if (preFilter.galModels.isNotEmpty) 'models': chip(preFilter.galModels),
           };
+          final text = preFilter.filename ?? preFilter.description ?? preFilter.context;
+          if (text != null) {
+            textSearchController.text = text;
+            textSearchType.value = preFilter.filename != null
+                ? TextSearchType.filename
+                : preFilter.description != null
+                ? TextSearchType.description
+                : TextSearchType.context;
+          }
           labelKinds.value = {if (preFilter.galLabels.isNotEmpty) 'labels': preFilter.galLabels};
           locationCurrentFilterWidget.value = preFilter.location.city != null
               ? Text(preFilter.location.city!, style: context.textTheme.labelLarge)
@@ -205,6 +220,7 @@ class SearchPage extends HookConsumerWidget {
           _ => filter.value.copyWith(galMixes: v),
         };
       }
+
       var picked = current().toSet();
 
       void handleClear() {
@@ -213,7 +229,12 @@ class SearchPage extends HookConsumerWidget {
       }
 
       void handleApply() {
-        final list = kind == 'models' ? [for (final m in kGalleryModels) if (picked.contains(m)) m] : picked.toList();
+        final list = kind == 'models'
+            ? [
+                for (final m in kGalleryModels)
+                  if (picked.contains(m)) m,
+              ]
+            : picked.toList();
         galleryWidgets.value = {
           ...galleryWidgets.value,
           kind: list.isEmpty ? null : Text(list.join(', '), style: context.textTheme.labelLarge),
@@ -636,6 +657,12 @@ class SearchPage extends HookConsumerWidget {
       appBar: AppBar(
         automaticallyImplyLeading: true,
         actions: [
+          IconButton(
+            key: const ValueKey('search_bookmark'),
+            tooltip: "Bookmark this search",
+            icon: const Icon(Icons.bookmark_add_outlined),
+            onPressed: () => unawaited(bookmarkSearchDialog(context, filter.value)),
+          ),
           Padding(
             padding: const EdgeInsets.only(right: 16.0),
             child: MenuAnchor(

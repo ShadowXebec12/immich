@@ -4,8 +4,8 @@ import 'dart:async';
 import 'package:auto_route/auto_route.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/saved_searches.dart';
 import 'package:immich_mobile/domain/models/album/album.model.dart';
-import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/providers/infrastructure/album.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/routing/router.dart';
@@ -13,10 +13,8 @@ import 'package:immich_mobile/routing/router.dart';
 const kRecentAlbumLimit = 12;
 
 /// [ids] with [albumId] moved to the front, without duplicates, at most [limit] long.
-List<String> pushRecentAlbum(List<String> ids, String albumId, {int limit = kRecentAlbumLimit}) => [
-  albumId,
-  ...ids.where((id) => id != albumId),
-].take(limit).toList();
+List<String> pushRecentAlbum(List<String> ids, String albumId, {int limit = kRecentAlbumLimit}) =>
+    [albumId, ...ids.where((id) => id != albumId)].take(limit).toList();
 
 /// Recent ids resolved to albums that still exist, newest first, without [excludeId].
 List<RemoteAlbum> resolveRecentAlbums(List<String> ids, List<RemoteAlbum> albums, {String? excludeId}) {
@@ -57,32 +55,72 @@ class RecentAlbumsButton extends ConsumerWidget {
       excludeId: currentAlbumId,
     );
 
+    // Bookmarks / Searches / Recent albums tabs (saved searches open the Search page)
+    Map? openSearch;
     final picked = await showModalBottomSheet<RemoteAlbum>(
       context: context,
       isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              ListTile(title: Text("Recent albums", style: context.textTheme.titleMedium)),
-              if (recent.isEmpty)
-                const ListTile(key: Key('recent_albums_empty'), title: Text("No other albums opened yet")),
-              for (final album in recent)
-                ListTile(
-                  key: ValueKey('recent_album_${album.id}'),
-                  leading: const Icon(Icons.photo_album_outlined),
-                  title: Text(album.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                  subtitle: Text("${album.assetCount} items"),
-                  onTap: () => Navigator.of(context).pop(album),
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(sheetContext).height * 0.7,
+          child: DefaultTabController(
+            length: 3,
+            initialIndex: 2,
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(key: Key('tab_bookmarks'), text: "Bookmarks"),
+                    Tab(key: Key('tab_searches'), text: "Searches"),
+                    Tab(key: Key('tab_recent_albums'), text: "Recent albums"),
+                  ],
                 ),
-            ],
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      SavedSearchList(
+                        bookmarks: true,
+                        onOpen: (q) {
+                          openSearch = q;
+                          Navigator.of(sheetContext).pop();
+                        },
+                      ),
+                      SavedSearchList(
+                        bookmarks: false,
+                        onOpen: (q) {
+                          openSearch = q;
+                          Navigator.of(sheetContext).pop();
+                        },
+                      ),
+                      ListView(
+                        children: [
+                          if (recent.isEmpty)
+                            const ListTile(key: Key('recent_albums_empty'), title: Text("No other albums opened yet")),
+                          for (final album in recent)
+                            ListTile(
+                              key: ValueKey('recent_album_${album.id}'),
+                              leading: const Icon(Icons.photo_album_outlined),
+                              title: Text(album.name, maxLines: 2, overflow: TextOverflow.ellipsis),
+                              subtitle: Text("${album.assetCount} items"),
+                              onTap: () => Navigator.of(sheetContext).pop(album),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
     );
 
+    if (openSearch != null && context.mounted) {
+      SavedSearchStore.open(context, ref, openSearch!);
+      return;
+    }
     if (picked == null || !context.mounted) {
       return;
     }
@@ -93,7 +131,7 @@ class RecentAlbumsButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) => IconButton(
     key: const Key('recent_albums_button'),
-    tooltip: "Recent albums",
+    tooltip: "Bookmarks, searches, recent albums",
     onPressed: () => unawaited(_open(context, ref)),
     icon: Icon(Icons.history_rounded, color: color, shadows: shadows),
   );
