@@ -42,30 +42,22 @@ void main() {
 
     tearDown(() async => ctx.db.close());
 
-    test('45k names match in one query, newest first, trashed left out, case-insensitive', () async {
-      final names = {for (var n = 1; n <= 45000; n++) 'file $n.png'}..add('not there.png');
+    test('45k server ids ordered in one query, newest first, trashed and unknown left out', () async {
+      final names = [for (var n = 1; n <= 45000; n++) 'id$n', 'not-on-this-phone'];
       final sw = Stopwatch()..start();
-      final ids = await galleryIdsByNames(ctx.db, names);
+      final ids = await galleryIdsOrdered(ctx.db, names);
       sw.stop();
       // ids 1..45000 minus the trashed ones (n % 1000 == 7 -> 45 of them)
       expect(ids.length, 45000 - 45);
       expect(ids.first, 'id45000');
       expect(ids.contains('id7'), isFalse);
       // ignore: avoid_print
-      print('galleryIdsByNames 45k of 120k rows: ${sw.elapsedMilliseconds} ms');
+      print('galleryIdsOrdered 45k of 120k rows: ${sw.elapsedMilliseconds} ms');
       expect(sw.elapsedMilliseconds, lessThan(5000));
 
       final page = await galleryAssetsByIds(ctx.db, ids.sublist(0, 300));
       expect(page.map((a) => a.id).toList(), ids.sublist(0, 300));
-      expect(await galleryIdsByNames(ctx.db, {}), isEmpty);
-    });
-
-    test("names with quotes, commas and non-ASCII still match", () async {
-      final weird = "1girl, {{yang xiao long}}, artist_\"x\" 'q' ünï s-1.png";
-      await (ctx.db.update(ctx.db.remoteAssetEntity)..where((t) => t.id.equals('id5'))).write(
-        const RemoteAssetEntityCompanion(name: Value("1girl, {{yang xiao long}}, artist_\"x\" 'q' ünï s-1.png")),
-      );
-      expect(await galleryIdsByNames(ctx.db, {weird.toLowerCase()}), ['id5']);
+      expect(await galleryIdsOrdered(ctx.db, const []), isEmpty);
     });
   });
 

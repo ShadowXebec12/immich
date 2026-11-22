@@ -1,6 +1,6 @@
 // Custom fork: search filters answered by the PC gallery server's search index (/search, /searchfacets,
-// /genmixes): model version, character, DOpus label, style mix. The server returns file paths; they are
-// matched to Immich assets by file name in the app's local database.
+// /genmixes): model version, character, DOpus label, style mix. The server returns Immich asset ids
+// (matched on the PC by NTFS file id, never by file name); the phone orders them newest first.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:isolate';
@@ -44,23 +44,22 @@ List<(String, String?, String?)> _modelQueries(List<String> models) {
   ];
 }
 
-String _baseName(String path) => path.substring(path.lastIndexOf(RegExp(r'[\\/]')) + 1).toLowerCase();
-
-/// #4: decoding a big answer (tens of thousands of paths) runs off the UI thread.
-List<String> _namesFromBodies(List<List<int>> bodies) {
-  final names = <String>{};
+/// #4: decoding a big answer (tens of thousands of ids) runs off the UI thread.
+List<String> _idsFromBodies(List<List<int>> bodies) {
+  final ids = <String>{};
   for (final bytes in bodies) {
     final body = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-    for (final p in (body['paths'] as List? ?? const [])) {
-      names.add(_baseName(p.toString()));
+    for (final i in (body['ids'] as List? ?? const [])) {
+      ids.add(i.toString());
     }
   }
-  return names.toList();
+  return ids.toList();
 }
 
-/// Lower-case file names matching every given filter (models are OR'ed, the rest AND).
+/// Immich asset ids matching every given filter (models are OR'ed, the rest AND). The server
+/// (/search ids=1) finds each hit's Immich asset by NTFS file id, never by file name (fork #4).
 /// The model requests run at the same time.
-Future<Set<String>> galleryFileNames({
+Future<List<String>> galleryServerIds({
   List<String> models = const [],
   List<String> chars = const [],
   List<String> labels = const [],
@@ -72,7 +71,7 @@ Future<Set<String>> galleryFileNames({
           .get(
             Uri.parse('$kGalleryServer/search').replace(
               queryParameters: {
-                'paths': '1',
+                'ids': '1',
                 'flat': '1',
                 if (ver != '45') 'ver': ver,
                 if (labels.isNotEmpty || extra != null) 'label': [...labels, ?extra],
@@ -88,21 +87,19 @@ Future<Set<String>> galleryFileNames({
     for (final res in responses)
       if (res.statusCode == 200) res.bodyBytes,
   ];
-  return (await Isolate.run(() => _namesFromBodies(bodies))).toSet();
+  return Isolate.run(() => _idsFromBodies(bodies));
 }
 
-/// #4 search speed: ids of the Immich assets (not trashed) whose file name is in [names], newest first.
-/// ONE query: the names go in as a JSON array, so SQLite reads the asset table once instead of once
-/// per 500 names (a 45k-image label used to cost ~90 full table reads on the phone).
-Future<List<String>> galleryIdsByNames(Drift db, Set<String> names) async {
-  if (names.isEmpty) {
+/// [ids] that this phone has (not trashed), newest first. One query, primary-key lookups only.
+Future<List<String>> galleryIdsOrdered(Drift db, List<String> ids) async {
+  if (ids.isEmpty) {
     return const [];
   }
   final rows = await db
       .customSelect(
         'SELECT id FROM remote_asset_entity WHERE deleted_at IS NULL '
-        'AND lower(name) IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC',
-        variables: [Variable.withString(jsonEncode(names.toList()))],
+        'AND id IN (SELECT value FROM json_each(?)) ORDER BY created_at DESC',
+        variables: [Variable.withString(jsonEncode(ids))],
         readsFrom: {db.remoteAssetEntity},
       )
       .get();
@@ -125,10 +122,6 @@ Future<List<RemoteAsset>> galleryAssetsByIds(Drift db, List<String> ids) async {
   ];
 }
 
-/// Immich assets (not trashed) whose file name is in [names], newest first.
-Future<List<RemoteAsset>> galleryAssets(Drift db, Set<String> names) async =>
-    galleryAssetsByIds(db, await galleryIdsByNames(db, names));
-
 String? _cacheKey;
 List<String>? _cacheIds;
 
@@ -144,8 +137,8 @@ Future<List<String>> galleryFilterIds(
   if (key == _cacheKey && _cacheIds != null) {
     return _cacheIds!;
   }
-  final names = await galleryFileNames(models: models, chars: chars, labels: labels, mixes: mixes);
-  final ids = await galleryIdsByNames(db, names);
+  final found = await galleryServerIds(models: models, chars: chars, labels: labels, mixes: mixes);
+  final ids = await galleryIdsOrdered(db, found);
   _cacheKey = key;
   _cacheIds = ids;
   return ids;
