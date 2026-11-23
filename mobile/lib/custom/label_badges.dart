@@ -211,6 +211,45 @@ class GridLabelBadges extends ConsumerWidget {
   }
 }
 
+/// Star rating on a grid thumbnail (bottom left, beside the favorite heart). Nothing when unrated.
+class GridStarBadge extends ConsumerWidget {
+  const GridStarBadge({super.key, required this.asset});
+
+  final BaseAsset asset;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final id = asset.remoteId;
+    final known = ref.watch(galleryStarsProvider.select((m) => id == null ? 0 : m[id]));
+    if (known == null) {
+      // a copy with the same file name as a loaded photo still needs its own stars (by Immich id)
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) {
+          ref.read(galleryLabelsProvider.notifier).want(asset);
+        }
+      });
+      return const SizedBox.shrink();
+    }
+    final stars = known;
+    if (stars <= 0) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: EdgeInsets.only(left: asset.isFavorite ? 30 : 3, bottom: 3),
+      child: Container(
+        key: const Key('grid_star_badge'),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+        decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.72), borderRadius: BorderRadius.circular(4)),
+        child: Text(
+          "\u2605$stars",
+          maxLines: 1,
+          style: const TextStyle(color: Colors.amber, fontSize: 11, fontWeight: FontWeight.w700, height: 1.2),
+        ),
+      ),
+    );
+  }
+}
+
 // ---------------------------------------------------------------- settings
 
 /// Settings > Asset viewer: "Label badges" row (like the mix gallery's Settings > Label badges).

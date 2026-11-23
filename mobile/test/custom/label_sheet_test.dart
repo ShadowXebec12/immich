@@ -75,7 +75,14 @@ void main() {
     expect(find.text('Pinned'), findsOneWidget);
     expect(find.text('doggystyle + lower body'), findsOneWidget);
     expect(find.text('close up + lower body'), findsOneWidget);
-    expect(find.text('Recent labels'), findsOneWidget);
+    // the 2 newest labels sit above Pinned, newest first
+    expect(find.text('Last used'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Last used')).dy, lessThan(tester.getTopLeft(find.text('Pinned')).dy));
+    expect(
+      tester.getTopLeft(find.text('cowgirl')).dy,
+      lessThan(tester.getTopLeft(find.text('close up')).dy),
+    );
+    expect(tester.getTopLeft(find.text('close up')).dy, lessThan(tester.getTopLeft(find.text('Pinned')).dy));
 
     // tap a recent combo: both labels staged
     await tester.tap(find.byKey(const ValueKey('labelsheet_recent_close up+lower body')));
@@ -91,7 +98,37 @@ void main() {
     expect(removes, ['missionary']);
   });
 
-  testWidgets('Swap pose: a pose combo marks the old pose for removal', (tester) async {
+  testWidgets('Swap lists every label and removes a non-pose one', (tester) async {
+    tester.view.physicalSize = const Size(1200, 2600);
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    List<String>? removes;
+    await tester.pumpTestWidget(
+      context,
+      Navigator(
+        onGenerateRoute: (_) => MaterialPageRoute(
+          builder: (_) => MixLabelSheet(
+            data: data(),
+            current: const {'missionary', 'best riz style'},
+            have: const {'missionary': 1, 'best riz style': 1},
+            count: 1,
+            onSave: (_, r) => removes = r,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: find.byKey(const Key('labelsheet_mode')), matching: find.text('Swap')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('labelsheet_swap_missionary')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('labelsheet_swap_best riz style')));
+    await tester.pump();
+    await tester.tap(find.byKey(const Key('labelsheet_save')));
+    await tester.pumpAndSettle();
+    expect(removes, ['best riz style']);
+  });
+
+  testWidgets('Swap: a pose combo marks the old pose for removal', (tester) async {
     tester.view.physicalSize = const Size(1200, 2600);
     tester.view.devicePixelRatio = 2;
     addTearDown(tester.view.reset);
@@ -115,7 +152,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Swap pose'));
+    await tester.tap(find.descendant(of: find.byKey(const Key('labelsheet_mode')), matching: find.text('Swap')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('labelsheet_recent_doggystyle+lower body')));
     await tester.pump();

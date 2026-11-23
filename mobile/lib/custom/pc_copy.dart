@@ -20,7 +20,8 @@ const kPcPasteKeys = <(String, String)>[
   ('i', "Paste + Alt+I"),
 ];
 
-Future<void> copyToPc(WidgetRef ref, BaseAsset asset, {String keys = '', String title = "Copy to PC"}) async {
+/// True when the PC has the image.
+Future<bool> copyToPc(WidgetRef ref, BaseAsset asset, {String keys = '', String title = "Copy to PC"}) async {
   final toast = ref.read(toastServiceProvider);
   try {
     final res = await http
@@ -37,13 +38,53 @@ Future<void> copyToPc(WidgetRef ref, BaseAsset asset, {String keys = '', String 
     final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
     if (res.statusCode != 200 || body['ok'] != true) {
       toast.error("$title failed: ${body['err'] ?? res.statusCode}");
-    } else if (body['pasted'] == false) {
+      return false;
+    }
+    if (body['pasted'] == false) {
       toast.error("Copied on the PC, not pasted: ${body['note'] ?? 'NovelAI not in front'}");
     } else {
       toast.success(keys.isEmpty ? "Image copied on the PC" : "$title sent");
     }
+    return true;
   } catch (e) {
     toast.error("$title failed: $e");
+    return false;
+  }
+}
+
+/// Selection: every photo goes on the PC clipboard as one group of files.
+Future<bool> copyManyToPc(WidgetRef ref, List<BaseAsset> assets) async {
+  if (assets.length == 1) {
+    return copyToPc(ref, assets.first);
+  }
+  final toast = ref.read(toastServiceProvider);
+  try {
+    final res = await http
+        .post(
+          Uri.parse('$kGalleryServer/copyimage'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'items': [
+              for (final a in assets) {if (a.remoteId != null) 'immich_id': a.remoteId, 'name': a.name},
+            ],
+          }),
+        )
+        .timeout(const Duration(seconds: 45));
+    final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+    if (res.statusCode != 200 || body['ok'] != true) {
+      toast.error("Copy to PC failed: ${body['err'] ?? res.statusCode}");
+      return false;
+    }
+    final copied = (body['copied'] as num?)?.toInt() ?? 0;
+    if (copied < assets.length) {
+      toast.error("Copied $copied of ${assets.length} on the PC");
+    } else {
+      toast.success("$copied images copied on the PC");
+    }
+    return true;
+  } catch (e) {
+    toast.error("Copy to PC failed: $e");
+    return false;
   }
 }
 

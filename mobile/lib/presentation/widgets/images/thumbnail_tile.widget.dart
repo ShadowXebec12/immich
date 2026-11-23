@@ -215,6 +215,13 @@ class _ThumbnailTileState extends ConsumerState<ThumbnailTile> {
                       child: FractionallySizedBox(widthFactor: 0.8, child: GridLabelBadges(asset: asset)),
                     ),
                   ),
+                // Custom fork: star rating from the PC gallery
+                if (asset != null && asset.remoteId != null)
+                  AnimatedOpacity(
+                    opacity: _hideIndicators ? 0.0 : 1.0,
+                    duration: Durations.short4,
+                    child: Align(alignment: Alignment.bottomLeft, child: GridStarBadge(asset: asset)),
+                  ),
                 if (asset != null && asset.isFavorite)
                   AnimatedOpacity(
                     duration: Durations.short4,

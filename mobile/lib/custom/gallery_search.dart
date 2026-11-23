@@ -70,6 +70,9 @@ Future<List<String>> galleryServerIds({
   List<String> chars = const [],
   List<String> labels = const [],
   List<String> mixes = const [],
+  bool labelAny = false,
+  String dateFrom = '',
+  String dateTo = '',
 }) async {
   final responses = await Future.wait([
     for (final (ver, extra, exclude) in _modelQueries(models))
@@ -84,6 +87,9 @@ Future<List<String>> galleryServerIds({
                 'exclude': ?exclude,
                 if (chars.isNotEmpty) 'char': chars,
                 if (mixes.isNotEmpty) 'mix': mixes,
+                if (labelAny) 'label_mode': 'or',
+                if (dateFrom.isNotEmpty) 'date_from': dateFrom,
+                if (dateTo.isNotEmpty) 'date_to': dateTo,
               },
             ),
           )

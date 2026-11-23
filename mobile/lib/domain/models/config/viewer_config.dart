@@ -23,5 +23,8 @@ abstract class ViewerConfig with _$ViewerConfig {
     String? lastGenOptions,
     // Custom fork: ask "are you sure" before Move on PC
     @Default(true) bool confirmPcMove,
+    // Custom fork (#5): Info description starts folded; order of the Search page filter chips
+    @Default(true) bool descriptionCollapsed,
+    @Default(<String>[]) List<String> searchFacetOrder,
   }) = _ViewerConfig;
 }

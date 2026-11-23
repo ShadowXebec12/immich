@@ -11,6 +11,9 @@ import 'package:immich_mobile/providers/timeline/multiselect.provider.dart';
 /// Container that owns the selection of the grid the viewer was opened from.
 final viewerSelectContainerProvider = StateProvider<ProviderContainer?>((ref) => null);
 
+/// #5: the viewer is showing "View selected": labels and quick tags go to the viewed photo only.
+final viewerViewSelectedProvider = StateProvider<bool>((ref) => false);
+
 class ViewerSelectButton extends ConsumerStatefulWidget {
   const ViewerSelectButton({super.key, required this.asset});
 

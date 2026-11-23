@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:immich_mobile/custom/gen_menu.dart';
+import 'package:immich_mobile/custom/info_description.dart';
 import 'package:immich_mobile/custom/prompt_info.dart';
-import 'package:immich_mobile/providers/infrastructure/toast.provider.dart';
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/appears_in_details.widget.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/asset_owner_details.widget.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/date_time_details.widget.dart';
-import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/description.widget.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/drag_handle.widget.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/location_details.widget.dart';
 import 'package:immich_mobile/presentation/widgets/asset_viewer/asset_details/people_details.widget.dart';
@@ -48,22 +46,7 @@ class AssetDetails extends ConsumerWidget {
             const DragHandle(),
             // Custom fork (#4): description (with Copy) and the NAI prompt sections first, like the
             // mix gallery's Prompt sheet; Immich's own details stay below, folded.
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 8, 0),
-              child: Row(
-                children: [
-                  const Expanded(child: Text("Description", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14))),
-                  CopyTextButton(
-                    key: const ValueKey('info_copy_description'),
-                    label: "Description",
-                    text: exifInfo?.description ?? '',
-                    toast: ref.read(toastServiceProvider),
-                    compact: true,
-                  ),
-                ],
-              ),
-            ),
-            SheetAssetDescription(asset: asset, exifInfo: exifInfo),
+            InfoDescription(asset: asset, text: exifInfo?.description ?? ''),
             PromptInfoSections(asset: asset),
             const Divider(height: 1),
             ExpansionTile(

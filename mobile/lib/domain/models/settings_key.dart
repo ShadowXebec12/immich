@@ -34,6 +34,8 @@ enum SettingsKey<T> {
   viewerGenQueue<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
   viewerLastGenOptions<String?>(),
   viewerConfirmPcMove<bool>(),
+  viewerDescriptionCollapsed<bool>(),
+  viewerSearchFacetOrder<List<String>>(codec: ListCodec(PrimitiveCodec.string)),
 
   // Network
   networkAutoEndpointSwitching<bool>(),

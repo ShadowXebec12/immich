@@ -79,6 +79,8 @@ class _ArchiveBottomSheetState extends ConsumerState<ArchiveBottomSheet> {
         .new(action: AssetDebugAction(source: .timeline)),
         .new(action: ShareAction(source: .timeline)),
         .new(action: CopyNamesAction(source: .timeline)),
+        .new(action: CopyImageAction(source: .timeline)),
+        .new(action: CopyToPcAction(source: .timeline)),
         .new(action: LabelSheetAction(source: .timeline)),
         .new(action: QuickTagAction(source: .timeline)),
         .new(action: RateAction(source: .timeline)),

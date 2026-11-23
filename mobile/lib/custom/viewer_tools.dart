@@ -255,7 +255,11 @@ class _MultiFingerTapListenerState extends State<MultiFingerTapListener> {
 // ---------------------------------------------------------------- labels
 
 /// What a label or quick tag applies to: the grid selection when there is one, else this photo.
+/// #5: inside View selected it is always the photo on screen.
 List<BaseAsset> labelTargets(WidgetRef ref, BaseAsset asset) {
+  if (ref.read(viewerViewSelectedProvider)) {
+    return [asset];
+  }
   final selected = ref.read(viewerSelectContainerProvider)?.read(multiSelectProvider).selectedAssets;
   return selected != null && selected.isNotEmpty ? selected.toList() : [asset];
 }
@@ -263,8 +267,8 @@ List<BaseAsset> labelTargets(WidgetRef ref, BaseAsset asset) {
 /// #3: drop the grid selection once a batch label / quick tag / rating went through (mix gallery #78).
 /// #4: [always] = labels and ratings clear it after a single photo too (quick tags keep the old rule).
 void clearSelectionAfterBatch(WidgetRef ref, int count, {bool always = false}) {
-  if (count < 2 && !always) {
-    return;
+  if ((count < 2 && !always) || ref.read(viewerViewSelectedProvider)) {
+    return; // #5: View selected keeps its selection while you go through the photos
   }
   final container = ref.read(viewerSelectContainerProvider);
   if (container != null) {
@@ -469,8 +473,8 @@ Future<void> showLabelSheetFor(BuildContext context, WidgetRef ref, List<BaseAss
   final LabelSheetData data;
   try {
     data = await LabelSheetData.load();
-  } catch (_) {
-    ref.read(toastServiceProvider).error("PC server not reachable");
+  } catch (e) {
+    ref.read(toastServiceProvider).error(galleryErrorText(e));
     return;
   }
   if (!context.mounted) {
@@ -658,7 +662,8 @@ class _ViewerStarRowState extends ConsumerState<ViewerStarRow> {
   @override
   Widget build(BuildContext context) {
     final exif = ref.watch(assetExifProvider(widget.asset)).valueOrNull;
-    final stars = _set[widget.asset.heroTag] ?? exif?.rating ?? 0;
+    final pcStars = ref.watch(galleryStarsProvider.select((m) => m[widget.asset.remoteId])) ?? 0;
+    final stars = _set[widget.asset.heroTag] ?? (pcStars > 0 ? pcStars : exif?.rating ?? 0);
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [

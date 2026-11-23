@@ -41,6 +41,7 @@ Future<void> openAssetsInViewer(
   WidgetRef ref,
   List<BaseAsset> assets, {
   ProviderContainer? selectContainer,
+  bool viewSelected = false,
 }) async {
   if (assets.isEmpty) {
     return;
@@ -54,7 +55,12 @@ Future<void> openAssetsInViewer(
   // fade-out (see-through page, no bars) and stacks / label results never opened properly
   AssetViewer.setAsset(ref, assets.first);
   ref.read(viewerSelectContainerProvider.notifier).state = selectContainer;
-  await context.router.push(AssetViewerRoute(initialIndex: 0, timelineService: timeline));
+  final viewSelectedFlag = ref.read(viewerViewSelectedProvider.notifier)..state = viewSelected;
+  try {
+    await context.router.push(AssetViewerRoute(initialIndex: 0, timelineService: timeline));
+  } finally {
+    viewSelectedFlag.state = false;
+  }
 }
 
 /// albumId -> how many of [assetIds] it holds.

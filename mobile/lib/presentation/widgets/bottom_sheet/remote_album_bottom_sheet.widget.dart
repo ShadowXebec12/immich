@@ -86,6 +86,8 @@ class _RemoteAlbumBottomSheetState extends ConsumerState<RemoteAlbumBottomSheet>
         const .new(action: AssetDebugAction(source: .timeline)),
         const .new(action: ShareAction(source: .timeline)),
         const .new(action: CopyNamesAction(source: .timeline)),
+        const .new(action: CopyImageAction(source: .timeline)),
+        const .new(action: CopyToPcAction(source: .timeline)),
         const .new(action: LabelSheetAction(source: .timeline)),
         const .new(action: QuickTagAction(source: .timeline)),
         const .new(action: RateAction(source: .timeline)),

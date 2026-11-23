@@ -3,6 +3,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:immich_mobile/custom/album_filter_sheet.dart';
 import 'package:immich_mobile/custom/gallery_search.dart';
 import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/infrastructure/repositories/timeline.repository.dart';
@@ -37,6 +38,7 @@ class _AlbumSearchBarState extends ConsumerState<AlbumSearchBar> {
     _timer?.cancel();
     ref.read(albumSearchQueryProvider(widget.albumId).notifier).state = null;
     ref.read(albumSearchLabelsProvider(widget.albumId).notifier).state = const [];
+    ref.read(albumFilterProvider(widget.albumId).notifier).state = const AlbumFilter();
   }
 
   @override
@@ -84,12 +86,54 @@ class _AlbumSearchBarState extends ConsumerState<AlbumSearchBar> {
                   onChanged: _onChanged,
                 ),
               ),
+              _FilterButton(albumId: widget.albumId),
               _LabelButton(albumId: widget.albumId),
               _FieldPicker(albumId: widget.albumId),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+/// #5: the mix gallery style Filters sheet for this album.
+class _FilterButton extends ConsumerWidget {
+  const _FilterButton({required this.albumId});
+
+  final String albumId;
+
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    final labels = ref.read(albumSearchLabelsProvider(albumId).notifier);
+    final filter = ref.read(albumFilterProvider(albumId).notifier);
+    final picked = await showAlbumFilterSheet(context, ref, filter.state.withLabels(labels.state));
+    if (picked == null) {
+      return;
+    }
+    labels.state = picked.labels;
+    filter.state = picked.withLabels(const []);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final labels = ref.watch(albumSearchLabelsProvider(albumId));
+    final full = ref.watch(albumFilterProvider(albumId)).withLabels(labels);
+    final loading =
+        full.needsFullFilter &&
+        ref.watch(albumFilteredAssetsProvider(albumFilterKey(albumId, full)).select((a) => a.isLoading));
+    final active = full.activeCount;
+    return IconButton(
+      key: const Key('album_filter_button'),
+      tooltip: "Filters",
+      visualDensity: VisualDensity.compact,
+      onPressed: () => unawaited(_open(context, ref)),
+      icon: loading
+          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+          : Badge(
+              isLabelVisible: active > 0,
+              label: Text("$active"),
+              child: Icon(Icons.tune_rounded, color: active > 0 ? context.colorScheme.primary : null),
+            ),
     );
   }
 }

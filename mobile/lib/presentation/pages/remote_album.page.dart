@@ -14,6 +14,7 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/presentation/widgets/album/album_search_bar.widget.dart';
 import 'package:immich_mobile/presentation/widgets/album/pending_uploads_banner.widget.dart';
+import 'package:immich_mobile/custom/selection_actions.dart';
 import 'package:immich_mobile/presentation/widgets/album/recent_albums.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/remote_album_bottom_sheet.widget.dart';
 import 'package:immich_mobile/presentation/widgets/remote_album/album_option.widget.dart';
@@ -221,6 +222,16 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
           final field = ref.watch(albumSearchFieldProvider(_album.id));
           final factory = ref.watch(timelineFactoryProvider);
           final byName = ref.watch(appConfigProvider.select((c) => c.album.nameSortIds.contains(_album.id)));
+          // #5: Filters sheet (excludes, characters, mixes, model, dates, favorites, match any)
+          final full = ref.watch(albumFilterProvider(_album.id)).withLabels(labels);
+          if (full.needsFullFilter) {
+            final hits = ref.watch(albumFilteredAssetsProvider(albumFilterKey(_album.id, full))).valueOrNull ?? const [];
+            final q = query.toLowerCase();
+            final shown = q.isEmpty ? hits : hits.where((a) => a.name.toLowerCase().contains(q)).toList();
+            final service = factory.fromAssets(shown, TimelineOrigin.remoteAlbum);
+            ref.onDispose(service.dispose);
+            return service;
+          }
           if (labels.isNotEmpty) {
             // Custom fork: label filter (PC gallery server) + the typed text as a file-name filter
             final hits = ref.watch(albumLabelAssetsProvider((_album.id, labels.join('')))).valueOrNull ?? const [];
@@ -264,7 +275,8 @@ class _RemoteAlbumPageState extends ConsumerState<RemoteAlbumPage> {
     // Search results are one flat, undated list (same setup as the search page)
     final hasQuery =
         ref.watch(albumSearchQueryProvider(_album.id).select((query) => (query ?? '').trim().isNotEmpty)) ||
-        ref.watch(albumSearchLabelsProvider(_album.id).select((l) => l.isNotEmpty));
+        ref.watch(albumSearchLabelsProvider(_album.id).select((l) => l.isNotEmpty)) ||
+        ref.watch(albumFilterProvider(_album.id).select((f) => f.hasExtras));
     final byName = ref.watch(appConfigProvider.select((c) => c.album.nameSortIds.contains(_album.id)));
     final flat = hasQuery || byName;
 
@@ -529,7 +541,7 @@ class _AlbumKebabMenu extends ConsumerWidget {
           isNameSort: isNameSort,
           onToggleOffline: onToggleOffline,
           isOffline: isOffline,
-          extraItems: slideshowQueueMenuItems(context, ref, album),
+          extraItems: [RestoreSelectionMenuItem(albumId: album.id), ...slideshowQueueMenuItems(context, ref, album)],
         );
       },
     );

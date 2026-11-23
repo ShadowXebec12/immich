@@ -4,6 +4,7 @@ import 'package:auto_route/auto_route.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:immich_mobile/custom/saved_searches.dart';
+import 'package:immich_mobile/custom/search_facets.dart';
 import 'package:immich_mobile/custom/gallery_search.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -18,9 +19,11 @@ import 'package:immich_mobile/extensions/build_context_extensions.dart';
 import 'package:immich_mobile/generated/translations.g.dart';
 import 'package:immich_mobile/models/search/search_filter.model.dart';
 import 'package:immich_mobile/presentation/pages/search/paginated_search.provider.dart';
+import 'package:immich_mobile/presentation/widgets/album/recent_albums.widget.dart';
 import 'package:immich_mobile/presentation/widgets/bottom_sheet/general_bottom_sheet.widget.dart';
 import 'package:immich_mobile/presentation/widgets/search/quick_date_picker.dart';
 import 'package:immich_mobile/presentation/widgets/timeline/timeline.widget.dart';
+import 'package:immich_mobile/providers/infrastructure/settings.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/timeline.provider.dart';
 import 'package:immich_mobile/providers/infrastructure/user_metadata.provider.dart';
 import 'package:immich_mobile/providers/search/search_input_focus.provider.dart';
@@ -657,6 +660,106 @@ class SearchPage extends HookConsumerWidget {
       TextSearchType.ocr => Icons.document_scanner_outlined,
     };
 
+    // #5: chips in the order set in Settings > Asset Viewer > Search filter order
+    final facetChips = <String, Widget>{
+      'albums': SearchFilterChip(
+        key: const Key('album_filter_chip'),
+        icon: Icons.photo_album_outlined,
+        onTap: showAlbumPicker,
+        label: "Albums",
+        currentFilter: albumCurrentFilterWidget.value,
+      ),
+      'chars': SearchFilterChip(
+        key: const Key('gal_chars_chip'),
+        icon: Icons.people_alt_outlined,
+        onTap: () => showGalleryPicker('chars', "Characters"),
+        label: "Characters",
+        currentFilter: galleryWidgets.value['chars'],
+      ),
+      'labels': SearchFilterChip(
+        key: const Key('gal_labels_chip'),
+        icon: Icons.label_outline,
+        onTap: () => showGalleryPicker('labels', "Labels"),
+        label: "Labels",
+        currentFilter: galleryWidgets.value['labels'],
+      ),
+      'request': SearchFilterChip(
+        key: const Key('gal_request_chip'),
+        icon: Icons.assignment_outlined,
+        onTap: () => showGalleryPicker('grp_request', "Request type", group: 'Model / Request type'),
+        label: "Request type",
+        currentFilter: galleryWidgets.value['grp_request'],
+      ),
+      'male': SearchFilterChip(
+        key: const Key('gal_male_chip'),
+        icon: Icons.man_outlined,
+        onTap: () => showGalleryPicker('grp_male', "Male type", group: 'Male'),
+        label: "Male type",
+        currentFilter: galleryWidgets.value['grp_male'],
+      ),
+      'body': SearchFilterChip(
+        key: const Key('gal_body_chip'),
+        icon: Icons.accessibility_new_outlined,
+        onTap: () => showGalleryPicker('grp_body', "Body type", group: 'Body'),
+        label: "Body type",
+        currentFilter: galleryWidgets.value['grp_body'],
+      ),
+      'mixes': SearchFilterChip(
+        key: const Key('gal_mixes_chip'),
+        icon: Icons.palette_outlined,
+        onTap: () => showGalleryPicker('mixes', "Style mix"),
+        label: "Mix",
+        currentFilter: galleryWidgets.value['mixes'],
+      ),
+      'location': SearchFilterChip(
+        icon: Icons.location_on_outlined,
+        onTap: showLocationPicker,
+        label: context.t.search_filter_location,
+        currentFilter: locationCurrentFilterWidget.value,
+      ),
+      if (userPreferences.valueOrNull?.tagsEnabled ?? false)
+        'tags': SearchFilterChip(
+          icon: Icons.sell_outlined,
+          onTap: showTagPicker,
+          label: context.t.tags,
+          currentFilter: tagCurrentFilterWidget.value,
+        ),
+      'models': SearchFilterChip(
+        key: const Key('gal_models_chip'),
+        icon: Icons.memory_outlined,
+        onTap: () => showGalleryPicker('models', "Model"),
+        label: "Model",
+        currentFilter: galleryWidgets.value['models'],
+      ),
+      'date': SearchFilterChip(
+        icon: Icons.date_range_outlined,
+        onTap: showQuickDatePicker,
+        label: context.t.search_filter_date,
+        currentFilter: dateRangeCurrentFilterWidget.value,
+      ),
+      'media': SearchFilterChip(
+        key: const Key('media_type_chip'),
+        icon: Icons.video_collection_outlined,
+        onTap: showMediaTypePicker,
+        label: context.t.search_filter_media_type,
+        currentFilter: mediaTypeCurrentFilterWidget.value,
+      ),
+      if (userPreferences.valueOrNull?.ratingsEnabled ?? false)
+        'rating': SearchFilterChip(
+          icon: Icons.star_outline_rounded,
+          onTap: showStarRatingPicker,
+          label: context.t.search_filter_star_rating,
+          currentFilter: ratingCurrentFilterWidget.value,
+        ),
+      'display': SearchFilterChip(
+        icon: Icons.display_settings_outlined,
+        onTap: showDisplayOptionPicker,
+        label: context.t.search_filter_display_options,
+        currentFilter: displayOptionCurrentFilterWidget.value,
+      ),
+    };
+    final facetOrder = orderedFacetIds(ref.watch(appConfigProvider.select((c) => c.viewer.searchFacetOrder)));
+
     return Scaffold(
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
@@ -665,11 +768,19 @@ class SearchPage extends HookConsumerWidget {
           IconButton(
             key: const ValueKey('search_bookmark'),
             tooltip: "Bookmark this search",
+            visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.bookmark_add_outlined),
             onPressed: () => unawaited(bookmarkSearchDialog(context, filter.value)),
           ),
+          IconButton(
+            key: const ValueKey('search_history'),
+            tooltip: "Bookmarks, searches, recent albums",
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.history_rounded),
+            onPressed: () => unawaited(showRecentSheet(context, ref, initialTab: 0)),
+          ),
           Padding(
-            padding: const EdgeInsets.only(right: 16.0),
+            padding: const EdgeInsets.only(right: 4.0),
             child: MenuAnchor(
               style: MenuStyle(
                 elevation: const WidgetStatePropertyAll(1),
@@ -813,103 +924,7 @@ class SearchPage extends HookConsumerWidget {
                   shrinkWrap: true,
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
-                  children: [
-                    SearchFilterChip(
-                      key: const Key('album_filter_chip'),
-                      icon: Icons.photo_album_outlined,
-                      onTap: showAlbumPicker,
-                      label: "Albums",
-                      currentFilter: albumCurrentFilterWidget.value,
-                    ),
-                    SearchFilterChip(
-                      key: const Key('gal_chars_chip'),
-                      icon: Icons.people_alt_outlined,
-                      onTap: () => showGalleryPicker('chars', "Characters"),
-                      label: "Characters",
-                      currentFilter: galleryWidgets.value['chars'],
-                    ),
-                    SearchFilterChip(
-                      key: const Key('gal_labels_chip'),
-                      icon: Icons.label_outline,
-                      onTap: () => showGalleryPicker('labels', "Labels"),
-                      label: "Labels",
-                      currentFilter: galleryWidgets.value['labels'],
-                    ),
-                    SearchFilterChip(
-                      key: const Key('gal_request_chip'),
-                      icon: Icons.assignment_outlined,
-                      onTap: () => showGalleryPicker('grp_request', "Request type", group: 'Model / Request type'),
-                      label: "Request type",
-                      currentFilter: galleryWidgets.value['grp_request'],
-                    ),
-                    SearchFilterChip(
-                      key: const Key('gal_male_chip'),
-                      icon: Icons.man_outlined,
-                      onTap: () => showGalleryPicker('grp_male', "Male type", group: 'Male'),
-                      label: "Male type",
-                      currentFilter: galleryWidgets.value['grp_male'],
-                    ),
-                    SearchFilterChip(
-                      key: const Key('gal_body_chip'),
-                      icon: Icons.accessibility_new_outlined,
-                      onTap: () => showGalleryPicker('grp_body', "Body type", group: 'Body'),
-                      label: "Body type",
-                      currentFilter: galleryWidgets.value['grp_body'],
-                    ),
-                    SearchFilterChip(
-                      key: const Key('gal_mixes_chip'),
-                      icon: Icons.palette_outlined,
-                      onTap: () => showGalleryPicker('mixes', "Style mix"),
-                      label: "Mix",
-                      currentFilter: galleryWidgets.value['mixes'],
-                    ),
-                    SearchFilterChip(
-                      icon: Icons.location_on_outlined,
-                      onTap: showLocationPicker,
-                      label: context.t.search_filter_location,
-                      currentFilter: locationCurrentFilterWidget.value,
-                    ),
-                    if (userPreferences.valueOrNull?.tagsEnabled ?? false)
-                      SearchFilterChip(
-                        icon: Icons.sell_outlined,
-                        onTap: showTagPicker,
-                        label: context.t.tags,
-                        currentFilter: tagCurrentFilterWidget.value,
-                      ),
-                    SearchFilterChip(
-                      key: const Key('gal_models_chip'),
-                      icon: Icons.memory_outlined,
-                      onTap: () => showGalleryPicker('models', "Model"),
-                      label: "Model",
-                      currentFilter: galleryWidgets.value['models'],
-                    ),
-                    SearchFilterChip(
-                      icon: Icons.date_range_outlined,
-                      onTap: showQuickDatePicker,
-                      label: context.t.search_filter_date,
-                      currentFilter: dateRangeCurrentFilterWidget.value,
-                    ),
-                    SearchFilterChip(
-                      key: const Key('media_type_chip'),
-                      icon: Icons.video_collection_outlined,
-                      onTap: showMediaTypePicker,
-                      label: context.t.search_filter_media_type,
-                      currentFilter: mediaTypeCurrentFilterWidget.value,
-                    ),
-                    if (userPreferences.valueOrNull?.ratingsEnabled ?? false)
-                      SearchFilterChip(
-                        icon: Icons.star_outline_rounded,
-                        onTap: showStarRatingPicker,
-                        label: context.t.search_filter_star_rating,
-                        currentFilter: ratingCurrentFilterWidget.value,
-                      ),
-                    SearchFilterChip(
-                      icon: Icons.display_settings_outlined,
-                      onTap: showDisplayOptionPicker,
-                      label: context.t.search_filter_display_options,
-                      currentFilter: displayOptionCurrentFilterWidget.value,
-                    ),
-                  ],
+                  children: [for (final id in facetOrder) ?facetChips[id]],
                 ),
               ),
             ),

@@ -7,8 +7,37 @@ import 'dart:convert';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:immich_mobile/domain/models/asset/base_asset.model.dart';
+import 'package:immich_mobile/domain/models/store.model.dart';
+import 'package:immich_mobile/entities/store.entity.dart';
 
-const kGalleryServer = 'http://192.168.1.4:8899';
+const kGalleryLan = 'http://192.168.1.4:8899';
+
+/// #6: the gallery runs on the same PC as Immich, so it is reached the way Immich is right now: the home
+/// address on Wi-Fi, the Tailscale address on mobile data. Any other host falls back to the home address.
+String galleryServerFor(String? immichEndpoint) {
+  final host = Uri.tryParse(immichEndpoint ?? '')?.host ?? '';
+  final tailscale = RegExp(r'^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.').hasMatch(host) || host.endsWith('.ts.net');
+  return host.startsWith('192.168.') || tailscale ? 'http://$host:8899' : kGalleryLan;
+}
+
+String get kGalleryServer {
+  try {
+    return galleryServerFor(Store.tryGet(StoreKey.serverEndpoint));
+  } catch (_) {
+    return kGalleryLan; // store not open yet
+  }
+}
+
+/// #6: says which address failed and how, so a screenshot of the error tells the cause.
+String galleryErrorText(Object e) {
+  final host = Uri.tryParse(kGalleryServer)?.host ?? '';
+  if (e is TimeoutException) {
+    return 'PC server timed out ($host)';
+  }
+  final detail = e is http.ClientException ? e.message : e.runtimeType.toString();
+  final short = detail.length > 60 ? detail.substring(0, 60) : detail;
+  return 'PC server not reachable ($host): $short';
+}
 
 /// Quick tags shown in the viewer. `list` = a quick-tag txt on the PC, `label` = a DOpus label.
 class QuickTag {
@@ -59,8 +88,9 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
 
   /// Ask for this asset's labels (batched; each name once per app run).
   void want(BaseAsset asset) {
-    final key = labelKey(asset);
-    if (key.isEmpty || _requested.contains(key)) {
+    // by Immich id: two photos can share a file name but not their stars
+    final key = asset.remoteId ?? labelKey(asset);
+    if (labelKey(asset).isEmpty || _requested.contains(key)) {
       return;
     }
     _requested.add(key);
@@ -70,11 +100,9 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
 
   Future<void> _flush() async {
     _timer = null;
-    final items = _pending.values.take(400).toList();
+    final keys = _pending.keys.take(400).toList();
+    final items = [for (final k in keys) _pending.remove(k)!];
     final batch = [for (final it in items) it['name'].toString()];
-    for (final name in batch) {
-      _pending.remove(name.trim().toLowerCase());
-    }
     if (_pending.isNotEmpty) {
       _timer = Timer(const Duration(milliseconds: 50), _flush);
     }
@@ -89,25 +117,34 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
       if (res.statusCode != 200) {
         return;
       }
-      final labels = (jsonDecode(utf8.decode(res.bodyBytes))['labels'] as Map?) ?? {};
+      final decoded = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
+      final labels = (decoded['labels'] as Map?) ?? {};
       final next = {...state};
       for (final entry in labels.entries) {
         next[entry.key.toString().trim().toLowerCase()] = [for (final l in (entry.value as List? ?? [])) l.toString()];
       }
       state = next;
       // quick-tag lists (bad / average / no_name ...) for the grid badges; found by Immich id on the PC
-      final qt = (jsonDecode(utf8.decode(res.bodyBytes))['qt'] as Map?) ?? {};
+      final qt = (decoded['qt'] as Map?) ?? {};
       final qtNext = {...ref.read(galleryQuickTagsProvider)};
       for (final name in batch) {
         final key = name.trim().toLowerCase();
         qtNext[key] = {for (final l in (qt[key] as List? ?? const [])) l.toString()};
       }
       ref.read(galleryQuickTagsProvider.notifier).state = qtNext;
+      // star ratings for the grid, by Immich id (the PC follows hardlinks by NTFS file id)
+      final stars = (decoded['stars'] as Map?) ?? {};
+      final starsNext = {...ref.read(galleryStarsProvider)};
+      for (final it in items) {
+        final id = it['immich_id']?.toString();
+        if (id != null) {
+          starsNext[id] = (stars[id] as num?)?.toInt() ?? 0;
+        }
+      }
+      ref.read(galleryStarsProvider.notifier).state = starsNext;
     } catch (_) {
       // PC server off: no badges, nothing else breaks. Let these be asked again later.
-      for (final name in batch) {
-        _requested.remove(name.trim().toLowerCase());
-      }
+      _requested.removeAll(keys);
     }
   }
 
@@ -192,10 +229,8 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
       _setLabels(assets.map(labelKey).where(done.contains), label, add);
       final failed = assets.where((a) => !done.contains(labelKey(a))).length;
       return failed == 0 ? null : '$failed of ${assets.length} not labeled';
-    } on TimeoutException {
-      return 'PC server took too long';
     } catch (e) {
-      return 'PC server not reachable';
+      return galleryErrorText(e);
     }
   }
 
@@ -231,10 +266,8 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
       }
       final failed = assets.length - keys.length;
       return failed == 0 ? null : '$failed of ${assets.length} not labeled';
-    } on TimeoutException {
-      return 'PC server took too long';
-    } catch (_) {
-      return 'PC server not reachable';
+    } catch (e) {
+      return galleryErrorText(e);
     }
   }
 
@@ -249,9 +282,16 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
           )
           .timeout(const Duration(seconds: 20));
       final body = jsonDecode(utf8.decode(res.bodyBytes)) as Map;
-      return res.statusCode == 200 && body['ok'] == true ? null : (body['err'] ?? 'Rating failed').toString();
-    } catch (_) {
-      return 'PC server not reachable';
+      if (res.statusCode != 200 || body['ok'] != true) {
+        return (body['err'] ?? 'Rating failed').toString();
+      }
+      final id = asset.remoteId;
+      if (id != null) {
+        ref.read(galleryStarsProvider.notifier).state = {...ref.read(galleryStarsProvider), id: stars};
+      }
+      return null;
+    } catch (e) {
+      return galleryErrorText(e);
     }
   }
 
@@ -294,8 +334,8 @@ class GalleryLabelsNotifier extends Notifier<Map<String, List<String>>> {
       qt[key] = cur;
       ref.read(galleryQuickTagsProvider.notifier).state = qt;
       return null;
-    } catch (_) {
-      return 'PC server not reachable';
+    } catch (e) {
+      return galleryErrorText(e);
     }
   }
 }
@@ -306,3 +346,6 @@ final galleryLabelsProvider = NotifierProvider<GalleryLabelsNotifier, Map<String
 
 /// filename (lower) -> quick-tag list keys it is in (bad, average, no_name, ...), for grid badges.
 final galleryQuickTagsProvider = StateProvider<Map<String, Set<String>>>((ref) => const {});
+
+/// Immich asset id -> stars from the PC gallery (0 = unrated), for the grid and the viewer.
+final galleryStarsProvider = StateProvider<Map<String, int>>((ref) => const {});

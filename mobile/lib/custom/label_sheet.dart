@@ -122,7 +122,7 @@ class LabelSheetData {
       return _cache!;
     }
     Future<dynamic> get(String path) async {
-      final res = await http.get(Uri.parse('$kGalleryServer$path')).timeout(const Duration(seconds: 15));
+      final res = await http.get(Uri.parse('$kGalleryServer$path')).timeout(const Duration(seconds: 30)); // 5G + Tailscale
       return jsonDecode(utf8.decode(res.bodyBytes));
     }
 
@@ -291,6 +291,22 @@ List<LabelHistoryEntry> _rows(List<LabelHistoryEntry> entries) {
   ];
 }
 
+/// The [n] most recently used single labels, newest first (a combo counts as its labels).
+List<String> lastUsedLabels(List<LabelHistoryEntry> entries, int n) {
+  final out = <String>[];
+  for (final e in [...entries]..sort((a, b) => b.time.compareTo(a.time))) {
+    for (final l in e.labels) {
+      if (out.length < n && !out.contains(l)) {
+        out.add(l);
+      }
+    }
+    if (out.length >= n) {
+      break;
+    }
+  }
+  return out;
+}
+
 String _ago(DateTime t) {
   final d = DateTime.now().difference(t);
   if (d.inMinutes < 1) {
@@ -350,6 +366,15 @@ class _MixLabelSheetState extends ConsumerState<MixLabelSheet> {
     ];
     list.sort();
     return list;
+  }
+
+  /// Swap: every label on the target photos, pose ones first
+  List<String> get _currentLabels {
+    final isPose = widget.data.isPose;
+    return widget.have.keys.toList()..sort((a, b) {
+      final byPose = (isPose(a) ? 0 : 1).compareTo(isPose(b) ? 0 : 1);
+      return byPose != 0 ? byPose : a.compareTo(b);
+    });
   }
 
   void _applyCombo(List<String> labels, {required bool toggle}) {
@@ -480,13 +505,16 @@ class _MixLabelSheetState extends ConsumerState<MixLabelSheet> {
     final pinKeys = {for (final p in pins) p.join('\u001f')};
     final rows = _rows(history).where((e) => !pinKeys.contains(e.labels.join('\u001f'))).toList();
     final combos = rows.where((e) => e.labels.length > 1).toList();
-    final singles = rows.where((e) => e.labels.length == 1).toList();
+    final lastUsed = lastUsedLabels(history, 2);
+    final singles = rows.where((e) => e.labels.length == 1 && !lastUsed.contains(e.labels.first)).toList();
     return [
-      if (pins.isEmpty && rows.isEmpty)
+      if (pins.isEmpty && rows.isEmpty && lastUsed.isEmpty)
         const Padding(
           padding: EdgeInsets.all(12),
           child: Text("Labels you add show up here.", style: TextStyle(color: Colors.white54)),
         ),
+      if (lastUsed.isNotEmpty) _header("Last used"),
+      for (final l in lastUsed) _recentRow([l], null, pinned: pinKeys.contains(l)),
       if (pins.isNotEmpty) _header("Pinned"),
       for (final p in pins) _recentRow(p, null, pinned: true),
       if (combos.isNotEmpty) _header("Recent combos"),
@@ -653,7 +681,7 @@ class _MixLabelSheetState extends ConsumerState<MixLabelSheet> {
                   key: const Key('labelsheet_mode'),
                   segments: const [
                     ButtonSegment(value: false, label: Text("Add")),
-                    ButtonSegment(value: true, label: Text("Swap pose")),
+                    ButtonSegment(value: true, label: Text("Swap")),
                   ],
                   selected: {_swap},
                   showSelectedIcon: false,
@@ -675,7 +703,7 @@ class _MixLabelSheetState extends ConsumerState<MixLabelSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _currentPoses.isEmpty ? "No pose labels on these photos" : "Tap to choose which to remove",
+                        _currentLabels.isEmpty ? "No labels on these photos" : "Tap to choose which to remove",
                         style: const TextStyle(color: Colors.white54, fontSize: 12),
                       ),
                       const SizedBox(height: 6),
@@ -683,8 +711,9 @@ class _MixLabelSheetState extends ConsumerState<MixLabelSheet> {
                         spacing: 6,
                         runSpacing: 6,
                         children: [
-                          for (final l in _currentPoses)
+                          for (final l in _currentLabels)
                             _pill(
+                              key: ValueKey('labelsheet_swap_$l'),
                               (widget.have[l] ?? 0) > 1 ? '$l · ${widget.have[l]}' : l,
                               on: _swapRemove.contains(l),
                               onColor: Colors.red.withAlpha(110),

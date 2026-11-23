@@ -33,15 +33,9 @@ Future<void> recordRecentAlbum(WidgetRef ref, String albumId) {
   return ref.read(settingsProvider).write(.albumRecentIds, pushRecentAlbum(current, albumId));
 }
 
-class RecentAlbumsButton extends ConsumerWidget {
-  const RecentAlbumsButton({super.key, this.currentAlbumId, this.color, this.shadows});
-
-  /// Set when shown inside an album: that album is left out and the picked one replaces it.
-  final String? currentAlbumId;
-  final Color? color;
-  final List<Shadow>? shadows;
-
-  Future<void> _open(BuildContext context, WidgetRef ref) async {
+/// Bookmarks / Searches / Recent albums sheet. [currentAlbumId]: shown inside an album, which is left
+/// out and replaced by the picked one. [initialTab]: 0 Bookmarks, 1 Searches, 2 Recent albums.
+Future<void> showRecentSheet(BuildContext context, WidgetRef ref, {String? currentAlbumId, int initialTab = 2}) async {
     if (ref.read(remoteAlbumProvider).albums.isEmpty) {
       await ref.read(remoteAlbumProvider.notifier).refresh();
     }
@@ -66,7 +60,7 @@ class RecentAlbumsButton extends ConsumerWidget {
           height: MediaQuery.sizeOf(sheetContext).height * 0.7,
           child: DefaultTabController(
             length: 3,
-            initialIndex: 2,
+            initialIndex: initialTab,
             child: Column(
               children: [
                 const TabBar(
@@ -126,13 +120,21 @@ class RecentAlbumsButton extends ConsumerWidget {
     }
     final route = RemoteAlbumRoute(album: picked);
     unawaited(currentAlbumId == null ? context.router.push(route) : context.router.popAndPush(route));
-  }
+}
+
+class RecentAlbumsButton extends ConsumerWidget {
+  const RecentAlbumsButton({super.key, this.currentAlbumId, this.color, this.shadows});
+
+  /// Set when shown inside an album: that album is left out and the picked one replaces it.
+  final String? currentAlbumId;
+  final Color? color;
+  final List<Shadow>? shadows;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => IconButton(
     key: const Key('recent_albums_button'),
     tooltip: "Bookmarks, searches, recent albums",
-    onPressed: () => unawaited(_open(context, ref)),
+    onPressed: () => unawaited(showRecentSheet(context, ref, currentAlbumId: currentAlbumId)),
     icon: Icon(Icons.history_rounded, color: color, shadows: shadows),
   );
 }
